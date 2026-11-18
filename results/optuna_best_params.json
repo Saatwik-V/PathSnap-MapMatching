@@ -1,0 +1,14 @@
+{
+  "family": "histgb",
+  "best_params": {
+    "learning_rate": 0.10552470605022081,
+    "max_depth": 7,
+    "max_leaf_nodes": 39,
+    "l2_regularization": 0.0021564467374895393,
+    "min_samples_leaf": 48
+  },
+  "best_cv_macro_f1": 0.7889267804918484,
+  "n_trials": 30,
+  "n_splits": 3,
+  "search_time_s": 309.39177203178406
+}

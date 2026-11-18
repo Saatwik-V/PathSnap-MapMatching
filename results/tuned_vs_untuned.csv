@@ -1,0 +1,3 @@
+Variant,CV Macro F1,Student-Test Top-1 Accuracy,Log Loss,Inference Latency (ms)
+histgb (UNTUNED),0.7879,71.59%,0.4445,0.001
+"histgb (TUNED via Optuna, 30 trials)",0.7889,82.69%,0.4699,0.001
