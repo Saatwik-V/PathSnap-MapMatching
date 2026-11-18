@@ -1,0 +1,2 @@
+trip_id,n_timesteps,classifier_only_pointwise_acc,hmm_pointwise_acc,classifier_only_continuity_pct,hmm_continuity_pct
+00000001,1315,0.7984790874524715,0.7543726235741445,71.5372907153729,80.441400304414
