@@ -4,6 +4,7 @@ Mandatory Hackathon Deliverable | Strict GroupKFold Leakage Prevention
 """
 
 import os
+import sys
 import time
 import joblib
 import numpy as np
@@ -18,6 +19,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import f1_score, log_loss
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 FEATURE_COLS = [
     "perp_dist",
@@ -183,6 +186,60 @@ def run_5_model_study(
         else:
             clf.fit(X, y)
             trained_models[m_name] = (clf, None, avg_f1)
+
+    # ---- Student-test Top-1 Accuracy / Macro F1 + Route Continuity, per model ----
+    # The Deliverables report table requires these per model, not just CV metrics.
+    # Route continuity needs the full candidate-gen + HMM/Viterbi pipeline, so each
+    # fitted model is temporarily dumped to disk and passed through hmm_viterbi.viterbi
+    # (reused as-is, rather than duplicating the decoder here).
+    student_test_csv = os.path.join(output_dir, "test_features.csv")
+    hmm_base_dir = "Student folder/student_test"
+    tmp_model_path = os.path.join(output_dir, "_tmp_model_eval.joblib")
+
+    continuity_by_model = {}
+    student_f1_by_model = {}
+    student_top1_by_model = {}
+
+    if os.path.exists(student_test_csv) and os.path.isdir(hmm_base_dir):
+        from hmm_viterbi.viterbi import evaluate_trips
+        test_df = pd.read_csv(student_test_csv)
+        Xt = test_df[FEATURE_COLS].values
+        yt = test_df["label_y"].values
+        trips = sorted(os.listdir(hmm_base_dir))
+
+        for m_name, (clf, scaler, _) in trained_models.items():
+            Xt_in = scaler.transform(Xt) if scaler is not None else Xt
+            probs_t = clf.predict_proba(Xt_in)[:, 1]
+            preds_t = (probs_t >= 0.5).astype(int)
+            student_f1_by_model[m_name] = f1_score(yt, preds_t, average="macro", zero_division=0)
+
+            eval_df = test_df.copy()
+            eval_df["prob"] = probs_t
+            top1_picks = eval_df.sort_values(["trip_id", "obs_idx", "prob"], ascending=[True, True, False])
+            top1_picks = top1_picks.groupby(["trip_id", "obs_idx"]).head(1)
+            student_top1_by_model[m_name] = top1_picks["label_y"].mean()
+
+            joblib.dump({"model": clf, "scaler": scaler, "model_name": m_name}, tmp_model_path)
+            try:
+                cont_df = evaluate_trips(trips, hmm_base_dir, tmp_model_path)
+                continuity_by_model[m_name] = cont_df["hmm_continuity_pct"].mean() if not cont_df.empty else np.nan
+            except Exception as e:
+                print(f"    [warn] HMM continuity evaluation failed for {m_name}: {e}")
+                continuity_by_model[m_name] = np.nan
+
+            print(f"    {m_name}: Student-Test Top-1 {student_top1_by_model[m_name]*100:.2f}% | "
+                  f"Macro F1 {student_f1_by_model[m_name]:.4f} | Route Continuity {continuity_by_model[m_name]:.2f}%")
+
+        if os.path.exists(tmp_model_path):
+            os.remove(tmp_model_path)
+
+        for row in results_table:
+            name = row["Model"]
+            row["Student-Test Top-1 Accuracy"] = f"{round(student_top1_by_model.get(name, float('nan')) * 100, 2)}%"
+            row["Student-Test Macro F1"] = round(student_f1_by_model.get(name, float("nan")), 4)
+            row["Route Continuity"] = f"{round(continuity_by_model.get(name, float('nan')), 2)}%"
+    else:
+        print("    [warn] Skipping student-test/HMM evaluation: test_features.csv or student_test trips not found.")
 
     # Compile Table
     res_df = pd.DataFrame(results_table)

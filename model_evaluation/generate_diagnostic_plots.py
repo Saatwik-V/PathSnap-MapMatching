@@ -19,6 +19,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from feature_engineering.extract_features import FEATURE_COLS
+from hmm_viterbi.viterbi import reconstruct_route
 
 sns.set_style("whitegrid")
 DPI = 300
@@ -110,7 +111,66 @@ def plot_hmm_continuity_gain(
     print(f"Saved: {output_path}")
 
 
+def plot_static_route_map(
+    trip_id: str = "00000007",
+    base_dir: str = "Student folder/student_test",
+    model_path: str = "results/best_tuned_model.joblib",
+    output_path: str = "results/plots/static_route_map.png",
+):
+    """
+    A matplotlib-rendered static geographical map (raw GPS, road network, reference
+    route, predicted route) for embedding directly in the PDF report -- ReportLab
+    cannot embed the interactive Folium HTML, so this serves as the "screenshot or
+    exported view" the Deliverables doc requires in the report itself. The full
+    interactive versions live in results/maps/.
+    """
+    trip_path = os.path.join(base_dir, trip_id)
+    track = pd.read_csv(os.path.join(trip_path, f"{trip_id}.track"), sep=r"\s+", header=None, names=["lon", "lat", "time"])
+    nodes = pd.read_csv(os.path.join(trip_path, f"{trip_id}.nodes"), sep=r"\s+", header=None, names=["lon", "lat"])
+    arcs = pd.read_csv(os.path.join(trip_path, f"{trip_id}.arcs"), sep=r"\s+", header=None, names=["u", "v"])
+    route_path = os.path.join(trip_path, f"{trip_id}.route")
+    route_arcs = pd.read_csv(route_path, sep=r"\s+", header=None, names=["arc_id"])["arc_id"].tolist()
+
+    result = reconstruct_route(trip_id, base_dir=base_dir, model_path=model_path)
+    predicted_arcs = result.get("predicted_arc_ids", [])
+
+    def arc_lines(arc_ids):
+        xs, ys = [], []
+        for a in arc_ids:
+            if a >= len(arcs):
+                continue
+            u, v = int(arcs.iloc[a]["u"]), int(arcs.iloc[a]["v"])
+            xs += [nodes.iloc[u]["lon"], nodes.iloc[v]["lon"], None]
+            ys += [nodes.iloc[u]["lat"], nodes.iloc[v]["lat"], None]
+        return xs, ys
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+    ref_x, ref_y = arc_lines(route_arcs)
+    pred_x, pred_y = arc_lines(predicted_arcs)
+
+    ax.scatter(track["lon"], track["lat"], s=5, color="#1f77b4", alpha=0.35, label="Raw Noisy GPS Observations", zorder=1)
+    ax.plot(ref_x, ref_y, color="#2ca02c", linewidth=4, alpha=0.9, solid_capstyle="round", label="Ground-Truth Reference Route", zorder=2)
+    ax.plot(pred_x, pred_y, color="#d62728", linewidth=2, linestyle="--", alpha=1.0, label="PathSnap Predicted Route (HMM+Viterbi)", zorder=3)
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(
+        f"PathSnap Route Reconstruction — Trip {trip_id}\n"
+        f"Route Continuity: {result.get('route_continuity_pct', float('nan')):.1f}% | "
+        f"Pointwise Accuracy: {result.get('pointwise_accuracy', float('nan')):.3f}",
+        fontsize=12, fontweight="bold",
+    )
+    ax.legend(loc="best", fontsize=9)
+    ax.set_aspect("equal", adjustable="datalim")
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=DPI)
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
 if __name__ == "__main__":
     plot_confusion_matrix()
     plot_tuned_vs_untuned()
     plot_hmm_continuity_gain()
+    plot_static_route_map()
