@@ -5,7 +5,7 @@ Pipeline: markdown --(pandoc)--> styled HTML --(headless Chrome via Playwright)-
 Every table and number lives in the markdown (generated from results/*.csv|json), and every
 figure is an image file produced by the committed scripts, so the PDF contains nothing that
 is not in the repository. If screenshots named report/figures/cmd_screenshot*.png exist
-they are embedded under section 7.3 (real photographs of Laptop 1's terminal).
+they are embedded under section 7.3 (real screenshots of Laptop 1's terminal; the caption lives in the markdown).
 
 Requirements (only to rebuild the PDF; not needed to run the system): pandoc,
 Google Chrome, and `pip install playwright`.
@@ -57,10 +57,7 @@ def main():
 
     md = open(MD, encoding="utf-8").read()
     shots = sorted(glob.glob(os.path.join(HERE, "figures", "cmd_screenshot*.png")))
-    block = "\n\n".join(
-        f"![Laptop 1 terminal]({os.path.relpath(s, HERE)}){{width=100%}}\n\n*Figure: screenshot of Laptop 1's terminal during a live request ({os.path.basename(s)}).*"
-        for s in shots
-    )
+    block = "\n\n".join(f"![Laptop 1 terminal]({os.path.relpath(s, HERE)}){{width=100%}}" for s in shots)
     md = md.replace("<!--CMD_SCREENSHOTS-->", block)
     tmp_md = os.path.join(HERE, "_build", "report_src.md")
     open(tmp_md, "w", encoding="utf-8").write(md)

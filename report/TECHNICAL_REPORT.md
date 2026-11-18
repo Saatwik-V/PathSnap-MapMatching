@@ -711,26 +711,32 @@ Drawing the network as one multi-segment polyline and subsampling GPS markers to
 
 ### 7.3 Laptop 1 terminal output
 
-The text below was captured verbatim from Laptop 1's terminal (uvicorn standard output)
-while the UI of §7.4 requested student-test trip 00000007:
+Every request prints a structured banner on Laptop 1's terminal. The screenshot below was taken on
+Laptop 1 during a live run with requests arriving from a second machine on the same network
+(client IP `10.30.202.38`, the server being `10.30.202.122`): health and trip-list calls, then
+`POST /predict` for two evaluator-partition trips, each answered with HTTP 200 and the server-side scorecard.
+
+<!--CMD_SCREENSHOTS-->
+
+*Figure 22. Screenshot of Laptop 1's terminal (uvicorn standard output) during a live two-machine run: evaluator-partition trips 00000059 (91.76% Top-1, 99.62% continuity) and 00000023 (73.80% Top-1, 99.30% continuity). The same figures appear in the pre-demo table of §7.6.*
+
+For legibility, the text of one request (student-test trip 00000007, captured verbatim from the same terminal during the UI run of §7.4):
 
 ```
 ================================================================================
-[2026-11-18 16:07:16] [EVALUATION REQUEST] POST /predict/00000007
-[2026-11-18 16:07:16] Client IP: 127.0.0.1 | Trip ID: 00000007
-[2026-11-18 16:07:16] Data Ingestion: Loaded 1,354 GPS points | 2,061 nodes | 4,369 arcs | 123 ground-truth arcs
-[2026-11-18 16:07:16] Sequential Decoding: Running HMM Viterbi road network snapping...
-[2026-11-18 16:07:16] Server-Side Ground-Truth Evaluation Results:
+[2026-11-18 16:07:51] [EVALUATION REQUEST] POST /predict/00000007
+[2026-11-18 16:07:51] Client IP: 127.0.0.1 | Trip ID: 00000007
+[2026-11-18 16:07:51] Data Ingestion: Loaded 1,354 GPS points | 2,061 nodes | 4,369 arcs | 123 ground-truth arcs
+[2026-11-18 16:07:51] Sequential Decoding: Running HMM Viterbi road network snapping...
+[2026-11-18 16:07:51] Server-Side Ground-Truth Evaluation Results:
     ├── Observation Top-1 Accuracy : 93.87%
     ├── Route Continuity %         : 99.16%
     ├── Macro F1-Score             : 0.9317
-    ├── Sequential Decode Time     : 1327.96 ms
-    └── Total Inference Latency    : 1381.63 ms
-[2026-11-18 16:07:16] Response Status: 200 OK | Predicted 239 continuous arcs
+    ├── Sequential Decode Time     : 352.75 ms
+    └── Total Inference Latency    : 392.40 ms
+[2026-11-18 16:07:51] Response Status: 200 OK | Predicted 239 continuous arcs
 ================================================================================
 ```
-
-<!--CMD_SCREENSHOTS-->
 
 ### 7.4 Streamlit evaluator interface (Laptop 2)
 
@@ -766,7 +772,7 @@ the firewall, `curl http://<laptop1_ip>:8000/health` is run from Laptop 2, and t
 Streamlit sidebar is pointed at `http://<laptop1_ip>:8000`. Full steps, firewall rules
 and fallback procedures (client-isolation on institutional Wi-Fi, DHCP changes, direct
 Ethernet) are in `deployment/setup_network.md`. `deployment/rehearsal_all_trips.py`
-calls every trip through the API and prints the scorecards, for a rehearsal before the demo.
+calls every trip through the API and prints the scorecards, for a rehearsal before the demo. The setup was exercised with a second machine on the same network reaching Laptop 1 by its LAN address (Figure 22).
 
 ### 7.6 Final-evaluation partition: pre-demo end-to-end run
 
