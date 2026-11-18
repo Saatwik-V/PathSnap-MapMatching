@@ -83,6 +83,7 @@ Live-demo playbook: [`docs/LIVE_DEMO_RUN_GUIDE.md`](docs/LIVE_DEMO_RUN_GUIDE.md)
 | `GET /health` | connectivity check |
 | `GET /trips` | the ten reserved evaluation trips (discovered from disk; `evaluator_test` first, `student_test` as fallback) |
 | `POST /predict/{trip_id}` | runs the full pipeline; returns metrics, predicted route and raw GPS (plus the reference route for `student_test` trips only) |
+| `GET /report.pdf` (or `/report`) | downloads the technical report PDF from Laptop 1 |
 
 ---
 
