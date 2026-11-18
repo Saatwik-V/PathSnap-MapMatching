@@ -201,7 +201,36 @@ if evaluate_button:
                         use_container_width=True,
                     )
                 else:
-                    st.info("Local trajectory data not found on client. Showing metric scorecard only.")
+                    import folium
+                    import streamlit.components.v1 as components
+
+                    gps = [[point["lat"], point["lon"]] for point in (data.get("raw_gps") or [])]
+                    route = (data.get("predicted_route") or {}).get("coordinates") or []
+                    points = gps + route
+
+                    if points:
+                        trip_map = folium.Map(location=points[0], zoom_start=16, prefer_canvas=True)
+
+                        if gps:
+                            gps_layer = folium.FeatureGroup(name="GPS observations (blue)").add_to(trip_map)
+                            for position in gps:
+                                folium.CircleMarker(
+                                    location=position, radius=2, color="#1976d2",
+                                    fill=True, fill_opacity=0.85,
+                                ).add_to(gps_layer)
+
+                        if route:
+                            route_layer = folium.FeatureGroup(name="Predicted route (red)").add_to(trip_map)
+                            if len(route) > 1:
+                                folium.PolyLine(route, color="#d62728", weight=5, opacity=0.8).add_to(route_layer)
+                            else:
+                                folium.CircleMarker(route[0], radius=4, color="#d62728").add_to(route_layer)
+
+                        trip_map.fit_bounds(trip_map.get_bounds(), padding=(16, 16), max_zoom=17)
+                        folium.LayerControl(collapsed=False).add_to(trip_map)
+                        components.html(trip_map.get_root().render(), height=540)
+                    else:
+                        st.warning("The API returned no GPS points or predicted route coordinates for this trip.")
             else:
                 st.error(f"Error from API server: {pred_resp.text}")
         except Exception as e:
