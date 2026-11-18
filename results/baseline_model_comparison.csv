@@ -1,0 +1,3 @@
+Model,CV Macro F1,Top-1 Accuracy,Log Loss
+Logistic Regression (Standardized),0.6602,57.5%,0.6341
+Random Forest (100 Trees),0.6825,59.32%,0.6382
