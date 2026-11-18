@@ -1,4 +1,4 @@
-"""
+﻿"""
 Folium Geographical Visualizer - PathSnap
 Author: Uttam
 Generates multi-layer interactive maps for trips.
@@ -31,7 +31,7 @@ def build_trip_map(
     m = folium.Map(
         location=[mean_lat, mean_lon],
         zoom_start=14,
-        tiles="CartoDB positron"
+        tiles="OpenStreetMap"
     )
 
     # Layer 1: Raw GPS Points
@@ -97,3 +97,4 @@ def build_trip_map(
     folium.LayerControl(collapsed=False).add_to(m)
 
     return m
+
