@@ -1,4 +1,4 @@
-﻿"""
+"""
 Folium Geographical Visualizer - PathSnap
 Author: Uttam
 Generates multi-layer interactive maps for trips.
@@ -12,8 +12,8 @@ import pandas as pd
 LEGEND_HTML = """
 <div style="
     position: fixed;
-    top: 90px;
-    right: 20px;
+    bottom: 24px;
+    left: 12px;
     z-index: 9999;
     background-color: rgba(255, 255, 255, 0.92);
     padding: 12px 14px;
@@ -121,7 +121,7 @@ def build_trip_map(
         row = track_df.iloc[idx]
         folium.CircleMarker(
             location=[row["lat"], row["lon"]],
-            radius=3,
+            radius=2,
             color="#1f77b4",
             fill=True,
             fill_color="#1f77b4",
@@ -168,7 +168,7 @@ def build_trip_map(
             folium.PolyLine(
                 locations=pred_coords,
                 color="#d62728",
-                weight=3,
+                weight=5,
                 dash_array="6, 6",
                 opacity=0.9,
                 tooltip="PathSnap Prediction"
