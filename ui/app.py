@@ -79,11 +79,12 @@ if evaluate_button:
                 data = pred_resp.json()
                 
                 # Metrics Row
+                metrics = data["metrics"]
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Top-1 Accuracy", f"{data['top1_accuracy'] * 100:.1f}%")
-                m2.metric("Macro F1-Score", f"{data['macro_f1']:.3f}")
-                m3.metric("Route Continuity", f"{data['route_continuity_pct']:.1f}%")
-                m4.metric("Inference Latency", f"{data['inference_time_ms']} ms")
+                m1.metric("Top-1 Accuracy", f"{metrics['top1_accuracy'] * 100:.1f}%")
+                m2.metric("Macro F1-Score", f"{metrics['macro_f1']:.3f}")
+                m3.metric("Route Continuity", f"{metrics['route_continuity']:.1f}%")
+                m4.metric("Inference Latency", f"{metrics['inference_latency_ms']:.1f} ms")
 
                 st.divider()
 
