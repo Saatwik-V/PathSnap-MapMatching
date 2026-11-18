@@ -288,10 +288,18 @@ def reconstruct_route_pipeline(
     tree = cKDTree(np.column_stack([mid_x, mid_y]))
 
     trained_model = None
+    scaler = None
     if model_path and os.path.exists(model_path):
         try:
-            trained_model = joblib.load(model_path)
-            logger.info(f"Loaded trained champion model from {model_path}")
+            artifact = joblib.load(model_path)
+            if isinstance(artifact, dict) and "model" in artifact:
+                trained_model = artifact["model"]
+                scaler = artifact.get("scaler")
+                m_name = artifact.get("model_name", "model")
+                logger.info(f"Loaded trained champion model '{m_name}' from {model_path}")
+            else:
+                trained_model = artifact
+                logger.info(f"Loaded trained champion model from {model_path}")
         except Exception as e:
             logger.warning(f"Could not load model from {model_path}: {e}")
 
@@ -314,11 +322,12 @@ def reconstruct_route_pipeline(
         else:
             vx, vy = 1.0, 0.0
         v_heading = math.degrees(math.atan2(vy, vx)) % 360.0
+        v_speed = math.hypot(vx, vy)
 
         step_cands = []
         c_idxs = candidate_indices[t] if k_candidates > 1 else [candidate_indices[t]]
 
-        for idx in c_idxs:
+        for rank_idx, idx in enumerate(c_idxs):
             arc_id = arc_ids[idx]
             ax1, ay1 = x1[idx], y1[idx]
             ax2, ay2 = x2[idx], y2[idx]
@@ -332,25 +341,54 @@ def reconstruct_route_pipeline(
             proj_x = ax1 + t_clamped * dx
             proj_y = ay1 + t_clamped * dy
 
+            # 12 Geometric and Kinematic Features:
+            # 1. perp_dist
             perp_dist = math.hypot(px - proj_x, py - proj_y)
-            dist_to_start = math.hypot(px - ax1, py - ay1)
-            dist_to_end = math.hypot(px - ax2, py - ay2)
-
+            # 2. proj_ratio
+            proj_ratio = t_clamped
+            # 3. heading_error
             seg_heading = math.degrees(math.atan2(dy, dx)) % 360.0
             heading_diff = abs(v_heading - seg_heading)
             heading_error = min(heading_diff, 360.0 - heading_diff)
+            # 4. arc_length
+            arc_length = seg_len
+            # 5. dist_to_start
+            dist_to_start = math.hypot(px - ax1, py - ay1)
+            # 6. dist_to_end
+            dist_to_end = math.hypot(px - ax2, py - ay2)
+            # 7. candidate_rank
+            candidate_rank = float(rank_idx)
+            # 8. speed_mps
+            speed_mps = v_speed
+            # 9. perp_dist_sq
+            perp_dist_sq = perp_dist ** 2
+            # 10. heading_cos
+            heading_cos = math.cos(math.radians(heading_error))
+            # 11. length_ratio
+            length_ratio = (dist_to_start + dist_to_end) / max(arc_length, 1e-6)
+            # 12. endpoint_dist_min
+            endpoint_dist_min = min(dist_to_start, dist_to_end)
 
             spatial_prob = math.exp(-(perp_dist ** 2) / (2.0 * sigma * sigma))
+
+            # Full 12-feature vector
+            features_12 = np.array([[
+                perp_dist, proj_ratio, heading_error, arc_length, dist_to_start, dist_to_end,
+                candidate_rank, speed_mps, perp_dist_sq, heading_cos, length_ratio, endpoint_dist_min
+            ]])
 
             model_prob = 1.0
             if trained_model is not None:
                 try:
-                    feat = np.array([[perp_dist, t_clamped, heading_error, seg_len, dist_to_start, dist_to_end]])
+                    n_in = getattr(trained_model, "n_features_in_", 6)
+                    feat = features_12[:, :n_in]
+                    if scaler is not None:
+                        feat = scaler.transform(feat)
                     if hasattr(trained_model, "predict_proba"):
                         model_prob = float(trained_model.predict_proba(feat)[0][1])
                     else:
                         model_prob = float(trained_model.predict(feat)[0])
-                except Exception:
+                except Exception as e:
                     model_prob = 1.0
 
             emission = model_prob * spatial_prob + 1e-12
