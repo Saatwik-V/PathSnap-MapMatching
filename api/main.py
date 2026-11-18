@@ -135,6 +135,11 @@ def get_evaluation_trips():
     """
     data_root = find_dataset_root()
     trips = list_available_trips(data_root)
+    if not trips:
+        raise HTTPException(
+            status_code=503,
+            detail="No trip data found. Place 'Student folder/' at the repo root or set PATHSNAP_DATA_DIR.",
+        )
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] [TRIP DISCOVERY] Found {len(trips)} test trips: {trips}")

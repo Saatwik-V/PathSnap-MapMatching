@@ -150,7 +150,7 @@ per-model rationale.
 ### B. Bayesian Hyperparameter Optimization (Optuna)
 *Tuning HistGradientBoosting over 30 trials with TPESampler, `GroupKFold(n_splits=3)`; untuned and tuned are both scored on the same held-out student-test partition:*
 * **CV Macro F1**: 0.7908 -> 0.7970 (+0.006).
-* **Held-out Student-Test Top-1 Accuracy**: 84.88% -> 84.99% (+0.11 points) -- a small, honest gain; the default configuration was already near this feature set's ceiling. (An earlier draft reported "73.09% -> 84.99%" by mixing a cross-validation number with a student-test number; that was wrong and has been corrected.)
+* **Held-out Student-Test Top-1 Accuracy**: 84.88% -> 84.99% (+0.11 points) -- a small, honest gain; the default configuration was already near this feature set's ceiling.
 * **Best Hyperparameters**: `learning_rate=0.0894, max_depth=13, max_leaf_nodes=84, l2_regularization=0.0232, min_samples_leaf=116`.
 
 ### C. Probability Calibration (experiment, not adopted)
@@ -180,9 +180,14 @@ source venv/bin/activate       # On Windows: .\venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+**Dataset.** `Student folder/` is not in git (course data). Place it at the repository root so that
+`Student folder/train/`, `Student folder/student_test/` and `Student folder/evaluator_test/` exist, or point the
+API at another location with the environment variable `PATHSNAP_DATA_DIR`. Each trip folder holds
+`.track`, `.nodes`, `.arcs` and (for train/student_test) `.route` files.
+
 ### 2. Running on Laptop 1 (Model Server & API — Saatwik)
 ```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 *Health Check*: `curl http://localhost:8000/health`
 *API Docs*: `http://localhost:8000/docs`

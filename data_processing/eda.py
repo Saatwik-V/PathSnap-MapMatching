@@ -192,8 +192,8 @@ def run_eda():
     
     ax1.hist(all_delta_ts[nominal_mask], bins=50, range=(0.5, 3.5), color='#1f77b4', edgecolor='black', alpha=0.85)
     ax1.axvline(1.0, color='#d62728', linestyle='--', linewidth=2, label=f'Nominal 1.0s (~{np.mean(np.isclose(all_delta_ts, 1.0, atol=0.05)):.1%})')
-    ax1.set_title('Nominal GPS Sampling Interval ($\Delta t \in [0.5s, 3.5s]$)', fontsize=13, fontweight='bold', pad=10)
-    ax1.set_xlabel('Sampling Interval $\Delta t$ (seconds)', fontsize=11)
+    ax1.set_title('Nominal GPS Sampling Interval ($\\Delta t \\in [0.5s, 3.5s]$)', fontsize=13, fontweight='bold', pad=10)
+    ax1.set_xlabel('Sampling Interval $\\Delta t$ (seconds)', fontsize=11)
     ax1.set_ylabel('Number of Observations', fontsize=11)
     ax1.legend(frameon=True, facecolor='white', framealpha=0.9)
     ax1.text(0.95, 0.85, f'{pct_nominal:.2f}% of all timesteps\nare within <= 5.0 seconds',
@@ -205,11 +205,11 @@ def run_eda():
     ax2.axvline(1.0, color='#d62728', linestyle='--', linewidth=2, label='Nominal 1.0s')
     ax2.axvline(5.0, color='#2ca02c', linestyle=':', linewidth=1.8, label=f'Gap > 5s (N={np.sum(all_delta_ts > 5.0)})')
     ax2.axvline(30.0, color='#9467bd', linestyle='-.', linewidth=1.8, label=f'Severe Dropout > 30s (N={np.sum(all_delta_ts > 30.0)})')
-    ax2.set_title('Full Tail Distribution of $\Delta t$ (Log Scale - Dropouts)', fontsize=13, fontweight='bold', pad=10)
-    ax2.set_xlabel('Sampling Interval $\Delta t$ (seconds)', fontsize=11)
+    ax2.set_title('Full Tail Distribution of $\\Delta t$ (Log Scale - Dropouts)', fontsize=13, fontweight='bold', pad=10)
+    ax2.set_xlabel('Sampling Interval $\\Delta t$ (seconds)', fontsize=11)
     ax2.set_ylabel('Frequency (Log Scale)', fontsize=11)
     ax2.legend(frameon=True, facecolor='white', framealpha=0.9)
-    ax2.text(0.95, 0.85, f'Max $\Delta t$: {all_delta_ts.max():.1f} s\nTotal Steps: {len(all_delta_ts):,}',
+    ax2.text(0.95, 0.85, f'Max $\\Delta t$: {all_delta_ts.max():.1f} s\nTotal Steps: {len(all_delta_ts):,}',
              transform=ax2.transAxes, ha='right', va='top',
              bbox=dict(boxstyle='round,pad=0.5', facecolor='#fff2e6', edgecolor='#ff7f0e', alpha=0.9))
 
@@ -289,17 +289,17 @@ def run_eda():
         
         f.write("## 2. Temporal Characteristics & GPS Dropout Quirks\n\n")
         f.write(f"- **Nominal Sampling Rate:** ~1.000 Hz ({np.mean(np.isclose(all_delta_ts, 1.0, atol=0.05)):.2%} of intervals exactly equal 1.0s).\n")
-        f.write(f"- **Mean $\Delta t$:** {all_delta_ts.mean():.3f} seconds; **Median $\Delta t$:** {np.median(all_delta_ts):.3f} seconds.\n")
-        f.write(f"- **Max Observed $\Delta t$ Gap:** {all_delta_ts.max():.1f} seconds (Observed in Trip `00000011`).\n")
+        f.write(f"- **Mean $\\Delta t$:** {all_delta_ts.mean():.3f} seconds; **Median $\\Delta t$:** {np.median(all_delta_ts):.3f} seconds.\n")
+        f.write(f"- **Max Observed $\\Delta t$ Gap:** {all_delta_ts.max():.1f} seconds (Observed in Trip `00000011`).\n")
         f.write(f"- **Gaps Exceeding 5.0 Seconds:** {np.sum(all_delta_ts > 5.0):,} occurrences ({np.sum(all_delta_ts > 5.0)/len(all_delta_ts):.3%}).\n")
         f.write(f"- **Severe Dropouts (> 30.0s):** {np.sum(all_delta_ts > 30.0):,} occurrences across {(df_stats['gaps_gt_30s'] > 0).sum()} trips.\n")
-        f.write("  - *Technical Implication:* During GPS dropouts (e.g. urban canyons, tunnels, hardware pauses), vehicle velocity cannot be assumed constant. Transition probabilities in the HMM must expand their spatial search radius dynamically as $\Delta t$ increases.\n\n")
+        f.write("  - *Technical Implication:* During GPS dropouts (e.g. urban canyons, tunnels, hardware pauses), vehicle velocity cannot be assumed constant. Transition probabilities in the HMM must expand their spatial search radius dynamically as $\\Delta t$ increases.\n\n")
         
         f.write("## 3. Geographic Multi-Region Characteristics\n\n")
         f.write("The dataset is not confined to a single city; trips originate from distinct global territories:\n")
         for reg, count in df_stats["region"].value_counts().items():
             f.write(f"- **{reg}:** {count} trips ({count/len(df_stats):.1%})\n")
-        f.write("\n*Design Decision:* A hardcoded UTM zone or national projection is invalid. All geometric calculations strictly use **dynamic local equirectangular metric projections** centered at each trip's local centroid $(\phi_0, \lambda_0)$, where 1 degree latitude $\equiv 111,320$ m and 1 degree longitude $\equiv 111,320 \times \cos(\phi_0)$ m.\n\n")
+        f.write("\n*Design Decision:* A hardcoded UTM zone or national projection is invalid. All geometric calculations strictly use **dynamic local equirectangular metric projections** centered at each trip's local centroid $(\\phi_0, \\lambda_0)$, where 1 degree latitude $\\equiv 111,320$ m and 1 degree longitude $\\equiv 111,320 \\times \\cos(\\phi_0)$ m.\n\n")
         
         f.write("## 4. Road Network Graph Topology\n\n")
         f.write(f"- Average nodes per trip road graph: {df_stats['n_nodes'].mean():.0f} nodes (Max: {df_stats['n_nodes'].max():,})\n")
@@ -308,7 +308,7 @@ def run_eda():
         f.write(f"- Average points per route arc: {df_stats['n_pts'].sum() / df_stats['n_route'].sum():.2f} GPS points/arc.\n\n")
 
         f.write("## 5. Candidate Generation & Feature Formulation Assumptions\n\n")
-        f.write("1. **Spatial Indexing:** Because graph arc counts exceed 160,000 per trip, brute-force search is computationally infeasible ($O(N \cdot M) > 2 \times 10^8$ ops/trip). We index all arc midpoints using `scipy.spatial.cKDTree` and retrieve the top-150 spatial neighbors before computing exact perpendicular point-to-segment distance.\n")
+        f.write("1. **Spatial Indexing:** Because graph arc counts exceed 160,000 per trip, brute-force search is computationally infeasible ($O(N \\cdot M) > 2 \\times 10^8$ ops/trip). We index all arc midpoints using `scipy.spatial.cKDTree` and retrieve the top-150 spatial neighbors before computing exact perpendicular point-to-segment distance.\n")
         f.write("2. **Ground-Truth Sequence Mapping:** Ground-truth routes provide an ordered list of arcs without explicit per-point timestamps. We map each GPS observation $P_t$ to the ground truth route using a normalized temporal window along the route sequence, selecting the segment with minimal perpendicular distance within the window.\n")
         f.write("3. **Top-K Candidates:** We retain $K=10$ nearest candidate road segments per GPS point. A candidate is assigned binary label `y = 1` if its `arc_id` matches the aligned ground-truth route arc, and `y = 0` otherwise.\n")
         f.write("4. **Zero Data Leakage:** Candidate generation and feature extraction operate purely trip-by-trip without any cross-trip aggregation or global normalization.\n")

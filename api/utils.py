@@ -80,11 +80,6 @@ def list_available_trips(data_root: Optional[str] = None) -> List[str]:
                 trips = sorted(valid)
                 break
 
-    if not trips:
-        # Last-resort placeholder if no trip directories are found at all on disk --
-        # the evaluator_test IDs, since that is the partition the live demo serves from.
-        trips = ["00000015", "00000017", "00000023", "00000030", "00000049",
-                 "00000059", "00000067", "00000073", "00000087", "00000094"]
     return trips
 
 

@@ -44,22 +44,21 @@ try:
 except Exception:
     st.sidebar.error("❌ Cannot reach Laptop 1 API. Ensure uvicorn is running.")
 
-# Fetch Trips
-# Offline placeholder shown only before the API connects -- the real list below always
-# comes from GET /trips. These are the 10 evaluator_test trip IDs (final-evaluation
-# partition), not student_test (our own dev-time partition) -- evaluator_test is what
-# the live demo actually serves from.
-available_trips = [
-    "00000015", "00000017", "00000023", "00000030", "00000049",
-    "00000059", "00000067", "00000073", "00000087", "00000094"
-]
+# Fetch Trips -- the list always comes from GET /trips; nothing is hardcoded here.
+available_trips = []
 if is_connected:
     try:
-        trips_resp = requests.get(f"{api_base_url}/trips", timeout=2)
+        trips_resp = requests.get(f"{api_base_url}/trips", timeout=5)
         if trips_resp.status_code == 200:
-            available_trips = trips_resp.json().get("trips", available_trips)
-    except Exception:
-        pass
+            available_trips = trips_resp.json().get("trips", [])
+        else:
+            st.error(f"Could not load the trip list from the API: {trips_resp.text}")
+    except Exception as e:
+        st.error(f"Could not load the trip list from the API: {e}")
+
+if not available_trips:
+    st.info("Waiting for Laptop 1: enter its address in the sidebar once the API is running. The ten evaluation trips load from the API.")
+    st.stop()
 
 # Main Area Controls
 col_ctrl1, col_ctrl2 = st.columns([3, 1])
