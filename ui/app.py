@@ -80,12 +80,84 @@ if evaluate_button:
                 metrics = data.get("metrics", data)  # supports flat or nested {"metrics": {...}} response shapes
                 predicted_arc_ids = data.get("predicted_route", {}).get("arc_ids", data.get("predicted_arc_ids", []))
 
-                # Metrics Row
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Top-1 Accuracy", f"{metrics.get('top1_accuracy', 0) * 100:.1f}%")
-                m2.metric("Macro F1-Score", f"{metrics.get('macro_f1', 0):.3f}")
-                m3.metric("Route Continuity", f"{metrics.get('route_continuity', metrics.get('route_continuity_pct', 0)):.1f}%")
-                m4.metric("Inference Latency", f"{metrics.get('inference_latency_ms', metrics.get('inference_time_ms', 0))} ms")
+                # Live trip scorecards
+                st.markdown("""
+                <style>
+                .ps-card {
+                    background: #172334;
+                    color: #f5f8fc;
+                    border: 1px solid #34465c;
+                    border-top: 3px solid var(--accent);
+                    border-radius: 14px;
+                    padding: 15px 18px;
+                    min-height: 112px;
+                    box-sizing: border-box;
+                    animation: ps-enter 260ms ease-out both;
+                    transition: transform 150ms ease, border-color 150ms ease;
+                }
+                .ps-card:hover {
+                    transform: translateY(-3px);
+                    border-color: var(--accent);
+                }
+                .ps-label { color: #c9d5e3; font-size: 0.88rem; }
+                .ps-value {
+                    margin: 4px 0 9px;
+                    font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+                    font-weight: 650;
+                    font-variant-numeric: tabular-nums;
+                    line-height: 1.1;
+                }
+                .ps-track {
+                    height: 4px;
+                    background: #35455a;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }
+                .ps-fill {
+                    height: 100%;
+                    background: var(--accent);
+                    transform-origin: left;
+                    animation: ps-fill 450ms ease-out both;
+                }
+                @keyframes ps-enter {
+                    from { opacity: 0; transform: translateY(5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes ps-fill { from { transform: scaleX(0); } }
+                @media (prefers-reduced-motion: reduce) {
+                    .ps-card, .ps-fill { animation: none; transition: none; }
+                    .ps-card:hover { transform: none; }
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                metrics = data.get("metrics", data)
+                cards = [
+                    ("Top-1 Accuracy", metrics.get("top1_accuracy"), ".1%", "#70b7ff", 100),
+                    ("Macro F1", metrics.get("macro_f1"), ".3f", "#b3a4ff", None),
+                    ("Route Continuity", metrics.get("route_continuity", metrics.get("route_continuity_pct")), ".1f", "#55d6ae", 1),
+                    ("Inference Latency", metrics.get("inference_latency_ms", metrics.get("inference_time_ms")), ".1f", "#ffc478", None),
+                ]
+
+                for column, (label, value, fmt, accent, bar_scale) in zip(st.columns(4), cards):
+                    display = "&mdash;"
+                    bar = ""
+                    if isinstance(value, (int, float)):
+                        display = format(value, fmt)
+                        if label == "Route Continuity":
+                            display += "%"
+                        elif label == "Inference Latency":
+                            display += " ms"
+                        if bar_scale is not None:
+                            width = min(100, max(0, value * bar_scale))
+                            bar = f'<div class="ps-track"><div class="ps-fill" style="width:{width:.2f}%"></div></div>'
+
+                    column.markdown(
+                        f'<div class="ps-card" style="--accent:{accent}">'
+                        f'<div class="ps-label">{label}</div>'
+                        f'<div class="ps-value">{display}</div>{bar}</div>',
+                        unsafe_allow_html=True,
+                    )
 
                 st.success(f"✅ HMM Viterbi decoding complete — {len(predicted_arc_ids)} continuous road arcs reconstructed.")
 
