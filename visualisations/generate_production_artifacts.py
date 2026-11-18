@@ -26,7 +26,7 @@ def generate_trip_map(trip_id: str, base_dir: str, model_path: str, output_dir: 
         route_arcs = pd.read_csv(route_path, sep=r"\s+", header=None, names=["arc_id"])["arc_id"].tolist()
 
     result = reconstruct_route(trip_id, base_dir=base_dir, model_path=model_path)
-    predicted_arcs = result.get("predicted_arc_ids", [])
+    predicted_arcs = result.get("repaired_route_arc_ids", result.get("predicted_arc_ids", []))
 
     fmap = build_trip_map(
         track_df=track_df,

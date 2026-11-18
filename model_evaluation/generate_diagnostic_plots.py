@@ -105,7 +105,7 @@ def plot_hmm_continuity_gain(
         f"10 Student-Test Trips",
         fontsize=11, fontweight="bold",
     )
-    ax.legend()
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3, frameon=False)
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     plt.savefig(output_path, dpi=DPI)
@@ -134,7 +134,7 @@ def plot_static_route_map(
     route_arcs = pd.read_csv(route_path, sep=r"\s+", header=None, names=["arc_id"])["arc_id"].tolist()
 
     result = reconstruct_route(trip_id, base_dir=base_dir, model_path=model_path)
-    predicted_arcs = result.get("predicted_arc_ids", [])
+    predicted_arcs = result.get("repaired_route_arc_ids", result.get("predicted_arc_ids", []))
 
     def arc_lines(arc_ids):
         xs, ys = [], []

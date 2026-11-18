@@ -131,16 +131,19 @@ then evaluated once, untouched, on the 10 held-out student-test trips (including
 
 | Model | Family | CV Macro F1 | CV Top-1 | Student-Test Top-1 | Student-Test F1 | Route Continuity | Log Loss | Train Time |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Logistic Regression | Linear | 0.7444 | 70.77% | 82.06% | 0.7594 | 92.87% | 0.5087 | 1.09s |
-| Distance-Weighted k-NN | Instance-based | 0.7526 | 69.50% | 80.68% | 0.7568 | 91.01% | 2.5580 | 0.66s |
-| Random Forest | Ensemble | 0.7856 | 73.00% | 84.75% | 0.7869 | 92.31% | 0.4153 | 49.83s |
-| **HistGradientBoosting** | Boosting | 0.7908 | 73.09% | **84.88%** | **0.7910** | **92.32%** | 0.4117 | 5.68s |
-| MLP | Neural Network | **0.7952** ⭐ | 72.70% | 84.16% | 0.7935 | 92.15% | 0.4238 | 105.84s |
+| Logistic Regression | Linear | 0.7444 | 70.77% | 82.06% | 0.7594 | 99.22% | 0.5087 | 1.10s |
+| Distance-Weighted k-NN | Instance-based | 0.7526 | 69.50% | 80.68% | 0.7568 | 99.05% | 2.5580 | 0.67s |
+| Random Forest | Ensemble | 0.7856 | 73.00% | 84.75% | 0.7869 | 99.01% | 0.4153 | 46.60s |
+| **HistGradientBoosting** | Boosting | 0.7908 | 73.09% | **84.88%** | **0.7910** | **99.02%** | 0.4117 | 5.01s |
+| MLP | Neural Network | **0.7952** ⭐ | 72.70% | 84.16% | 0.7935 | 99.11% | 0.4238 | 108.25s |
 
 ⭐ MLP has the single highest CV Macro F1, but **HistGradientBoosting was selected**
-for tuning and deployment: it beats MLP on every held-out student-test metric
-while training ~18.6x faster, and its CV-vs-held-out gap is the smallest of all
-five models (strongest generalisation evidence). See the report for the full
+for tuning and deployment: it is essentially tied with MLP on held-out student-test
+metrics (higher Top-1, 84.88% vs 84.16%; MLP is marginally higher on Macro F1,
+0.7910 vs 0.7935, and post-repair continuity, 99.02% vs 99.11%) while training
+~21.6x faster, which is what makes a 30-trial Bayesian search practical.
+Note the Route Continuity column is measured after the connectivity-repair
+stage, which dominates it: all five models land within 0.2 points of each other. See the report for the full
 per-model rationale.
 
 ### B. Bayesian Hyperparameter Optimization (Optuna)

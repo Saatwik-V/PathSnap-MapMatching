@@ -153,7 +153,7 @@ def build_pdf():
 
     has_student_cols = "Student-Test Macro F1" in comp_df.columns
     if has_student_cols:
-        header = ["Model", "Family", "Config", "CV F1", "Top-1", "Test F1", "Continuity", "Log Loss", "Latency"]
+        header = ["Model", "Family", "Config", "CV F1", "CV Top-1", "Test F1", "Cont. (HMM+repair)", "CV Log Loss", "Latency"]
         rows = [header]
         for _, r in comp_df.iterrows():
             rows.append([r["Model"], r["Algorithm Family"], r["Key Configuration"], r["CV Macro F1"],

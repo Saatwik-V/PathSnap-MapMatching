@@ -130,20 +130,23 @@ and it directly tests generalisation, not just cross-validation performance.
 
 | Model | Algorithm Family | Key Configuration | CV Macro F1 | CV Top-1 Acc. | Student-Test Top-1 | Student-Test Macro F1 | Route Continuity | Log Loss | Train Time |
 |---|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Model 1 | Linear & Probabilistic | LogisticRegression, `max_iter=1000, class_weight='balanced'` | 0.7444 | 70.77% | 82.06% | 0.7594 | 92.87% | 0.5087 | 1.09s |
-| Model 2 | Instance-based | Distance-Weighted k-NN, `k=5, weights='distance'` | 0.7526 | 69.50% | 80.68% | 0.7568 | 91.01% | 2.5580 | 0.66s |
-| Model 3 | Ensemble (Bagging) | Random Forest, `n_estimators=100, max_depth=12` | 0.7856 | 73.00% | 84.75% | 0.7869 | 92.31% | 0.4153 | 49.83s |
-| Model 4 | Boosting | HistGradientBoosting, `max_iter=100, learning_rate=0.08` | 0.7908 | 73.09% | **84.88%** | **0.7910** | **92.32%** | 0.4117 | 5.68s |
-| Model 5 | Neural Network | MLP, `hidden_layer_sizes=(64,32), early_stopping=True` | **0.7952** ⭐ | 72.70% | 84.16% | 0.7935 | 92.15% | 0.4238 | 105.84s |
+| Model 1 | Linear & Probabilistic | LogisticRegression, `max_iter=1000, class_weight='balanced'` | 0.7444 | 70.77% | 82.06% | 0.7594 | 99.22% | 0.5087 | 1.10s |
+| Model 2 | Instance-based | Distance-Weighted k-NN, `k=5, weights='distance'` | 0.7526 | 69.50% | 80.68% | 0.7568 | 99.05% | 2.5580 | 0.67s |
+| Model 3 | Ensemble (Bagging) | Random Forest, `n_estimators=100, max_depth=12` | 0.7856 | 73.00% | 84.75% | 0.7869 | 99.01% | 0.4153 | 46.60s |
+| Model 4 | Boosting | HistGradientBoosting, `max_iter=100, learning_rate=0.08` | 0.7908 | 73.09% | **84.88%** | **0.7910** | **99.02%** | 0.4117 | 5.01s |
+| Model 5 | Neural Network | MLP, `hidden_layer_sizes=(64,32), early_stopping=True` | **0.7952** ⭐ | 72.70% | 84.16% | 0.7935 | 99.11% | 0.4238 | 108.25s |
 
 ⭐ MLP has the highest raw CV Macro F1 and is the nominal champion by that
 single metric. Source: `results/five_model_comparison.csv`.
 
 **Model selection note:** MLP's CV Macro F1 lead over HistGradientBoosting is
 small (0.7952 vs 0.7908, a 0.0044 gap), and on the held-out student-test
-partition HistGradientBoosting actually edges MLP out on every metric that
-matters for deployment (Top-1 Accuracy, Macro F1, and Route Continuity), while
-training ~18.6x faster (5.68s vs 105.84s on this dataset). Per the Models and
+partition the two are essentially tied: HistGradientBoosting is ahead on
+Top-1 Accuracy (84.88% vs 84.16%), MLP is marginally ahead on Macro F1
+(0.7935 vs 0.7910) and on route continuity (99.11% vs 99.02%). Note the Route
+Continuity column is measured after the HMM connectivity-repair stage (§4),
+which dominates that metric, so all five models land within 0.2 points of each
+other and it does not discriminate between them. HistGradientBoosting trains ~21.6x faster (5.01s vs 108.25s on this dataset). Per the Models and
 Training Guidelines doc's explicit criteria — "generalisation performance",
 "inference speed", "compatibility with the sequential decoder" — **HistGradientBoosting
 was selected as the model to carry forward into Bayesian hyperparameter
@@ -174,7 +177,7 @@ fabricate one.
    "is this candidate the true arc" classification problem; gives a reference
    point for whether the nonlinear models below are actually earning their
    extra complexity.
-2. *Strengths/limitations:* cheapest to train (1.09s) and the only model with
+2. *Strengths/limitations:* cheapest to train (1.10s) and the only model with
    effectively zero inference latency; cannot capture nonlinear interactions
    between features like `heading_error` and `perp_dist` (e.g. a candidate can
    be close in distance but badly misaligned in heading, and a linear model
@@ -187,7 +190,7 @@ fabricate one.
 6. *Loss/objective:* L2-regularised logistic (binary cross-entropy) loss.
 
 **C. Experimental Results**
-7. Student-test performance: 82.06% Top-1 Accuracy, 0.7594 Macro F1, 92.87%
+7. Student-test performance: 82.06% Top-1 Accuracy, 0.7594 Macro F1, 99.22%
    route continuity after HMM decoding.
 8. CV Macro F1 0.7444, Log Loss 0.5087 (CV); Student-Test Macro F1 0.7594.
 9. *Overfitting/underfitting:* Student-Test Macro F1 (0.7594) is actually
@@ -215,8 +218,8 @@ fabricate one.
    to call out explicitly.
 
 **C. Experimental Results**
-7. Student-test performance: 80.68% Top-1 Accuracy, 0.7568 Macro F1, 91.01%
-   route continuity — the weakest of the five on every held-out metric.
+7. Student-test performance: 80.68% Top-1 Accuracy, 0.7568 Macro F1, 99.05%
+   route continuity — the weakest of the five on held-out Top-1 and Macro F1.
 8. CV Macro F1 0.7526, Log Loss 2.5580 (CV); Student-Test Macro F1 0.7568.
 9. *Overfitting/underfitting:* CV and Student-Test Macro F1 are close
    (0.7526 vs 0.7568) — no overfitting, but its discrimination ceiling is low
@@ -232,8 +235,8 @@ fabricate one.
    crossing.
 2. *Strengths/limitations:* strong, stable generalisation (bagging averages
    out individual tree variance); by far the slowest of the three tree/boosting
-   models to train on this dataset size (49.83s — ~8.8x HistGradientBoosting's
-   5.68s) for essentially the same accuracy, making it a weaker choice when
+   models to train on this dataset size (46.60s — ~9.3x HistGradientBoosting's
+   5.01s) for essentially the same accuracy, making it a weaker choice when
    training-time Bayesian search iteration speed matters.
 
 **B. Training and Configuration**
@@ -242,7 +245,7 @@ fabricate one.
    predictions averaged (bagged) across all 100 trees.
 
 **C. Experimental Results**
-7. Student-test performance: 84.75% Top-1 Accuracy, 0.7869 Macro F1, 92.31%
+7. Student-test performance: 84.75% Top-1 Accuracy, 0.7869 Macro F1, 99.01%
    route continuity.
 8. CV Macro F1 0.7856, Log Loss 0.4153 (CV); Student-Test Macro F1 0.7869.
 9. *Overfitting/underfitting:* Student-Test Macro F1 (0.7869) tracks CV Macro
@@ -259,8 +262,8 @@ fabricate one.
    is specifically built for exactly this kind of large tabular dataset
    (2M+ rows here).
 2. *Strengths/limitations:* best balance of accuracy and speed observed in
-   this study — matches or beats every other model on held-out student-test
-   metrics while training ~8.8–18.6x faster than Random Forest/MLP; like all
+   this study — within ~0.003 of the best Macro F1 and ahead on Top-1 among
+   all five models while training ~9.3–21.6x faster than Random Forest/MLP; like all
    boosting methods it is more sensitive to learning-rate/depth misconfiguration
    than bagging methods, which is exactly what the Bayesian search in §4
    addresses.
@@ -272,7 +275,7 @@ fabricate one.
    boosting over histogram-binned feature splits.
 
 **C. Experimental Results**
-7. Student-test performance: 84.88% Top-1 Accuracy, 0.7910 Macro F1, 92.32%
+7. Student-test performance: 84.88% Top-1 Accuracy, 0.7910 Macro F1, 99.02%
    route continuity — the **best of all five untuned models** on every
    held-out metric, despite not having the top CV Macro F1.
 8. CV Macro F1 0.7908, Log Loss 0.4117 (CV); Student-Test Macro F1 0.7910.
@@ -290,7 +293,7 @@ fabricate one.
    between `perp_dist` and `heading_error`) that tree ensembles approximate
    with many splits instead.
 2. *Strengths/limitations:* achieved the single highest CV Macro F1 (0.7952)
-   of all five models; by far the most expensive to train (105.84s — ~18.6x
+   of all five models; by far the most expensive to train (108.25s — ~21.6x
    HistGradientBoosting), and that cost compounds badly under a 30-trial
    Bayesian search (which is why HistGradientBoosting, not MLP, was tuned in
    §4) — requires `early_stopping=True` to avoid instability/overfitting on
@@ -303,9 +306,9 @@ fabricate one.
    default MLP solver).
 
 **C. Experimental Results**
-7. Student-test performance: 84.16% Top-1 Accuracy, 0.7935 Macro F1, 92.15%
-   route continuity — strong, but marginally below HistGradientBoosting on
-   every held-out metric despite leading on CV F1.
+7. Student-test performance: 84.16% Top-1 Accuracy, 0.7935 Macro F1, 99.11%
+   route continuity — strong; ahead of HistGradientBoosting on Macro F1 and
+   continuity by a hair, behind it on Top-1, and ~21.6x slower to train.
 8. CV Macro F1 0.7952, Log Loss 0.4238 (CV); Student-Test Macro F1 0.7935.
 9. *Overfitting/underfitting:* Student-Test Macro F1 (0.7935) is within 0.0017
    of CV Macro F1 (0.7952) — no meaningful overfitting, `early_stopping` is
@@ -319,8 +322,8 @@ fabricate one.
 ## 3. Bayesian Hyperparameter Optimisation
 
 **Model tuned: HistGradientBoosting** (see §2.1 for the selection rationale —
-nearly tied with MLP on CV F1, ahead of it on every held-out metric, and
-~18.6x cheaper to fit, which is what makes a real 30-trial search practical).
+nearly tied with MLP on CV F1 and on held-out metrics, and
+~21.6x cheaper to fit, which is what makes a real 30-trial search practical).
 
 1. **Hyperparameters searched:** `learning_rate` (log-uniform, 1e-3–3e-1),
    `max_depth` (3–14), `max_leaf_nodes` (15–127), `l2_regularization`
