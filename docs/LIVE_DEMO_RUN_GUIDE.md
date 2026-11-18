@@ -96,6 +96,8 @@ git pull origin main
 streamlit run ui/app.py
 ```
 
+> **Laptop 2 is a Windows machine (PowerShell):** activate the environment with `.\venv\Scripts\activate`, and test connectivity with `curl.exe http://<LAPTOP_1_IP>:8000/health` (plain `curl` is an alias of `Invoke-WebRequest` and prompts for confirmation).
+
 Streamlit will open in the browser at `http://localhost:8501`.
 
 ---

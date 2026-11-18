@@ -111,6 +111,16 @@ streamlit run ui/app.py
 
 ---
 
+### Windows (PowerShell) note for Laptop 2
+In PowerShell, `curl` is an alias of `Invoke-WebRequest` and asks for confirmation. Use `curl.exe` instead:
+```powershell
+curl.exe http://<LAPTOP_1_IP>:8000/health
+curl.exe http://<LAPTOP_1_IP>:8000/trips
+```
+Activate the environment with `.\venv\Scripts\activate`, and keep the data at `Student folder\evaluator_test\` inside the repository.
+
+---
+
 ## 4. Live Evaluator Viva Verification Checklist
 
 During the evaluation, the faculty will observe both screens simultaneously:

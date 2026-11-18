@@ -1,0 +1,18 @@
+# Exact versions this project was developed and tested with (Python 3.13.7).
+# Use requirements.txt for a flexible install, or this file for an exact reproduction:
+#   pip install -r requirements-lock.txt
+numpy==2.5.5
+pandas==3.1.1
+scipy==1.18.1
+networkx==3.7
+folium==1.0.0
+scikit-learn==1.9.1
+joblib==1.6.0
+optuna==5.1.0
+matplotlib==3.11.2
+seaborn==0.13.2
+fastapi==0.163.2
+uvicorn==0.54.0
+requests==2.34.2
+pydantic==2.14.3
+streamlit==1.67.0

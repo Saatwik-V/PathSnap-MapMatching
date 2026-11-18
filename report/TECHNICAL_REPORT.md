@@ -772,7 +772,11 @@ the firewall, `curl http://<laptop1_ip>:8000/health` is run from Laptop 2, and t
 Streamlit sidebar is pointed at `http://<laptop1_ip>:8000`. Full steps, firewall rules
 and fallback procedures (client-isolation on institutional Wi-Fi, DHCP changes, direct
 Ethernet) are in `deployment/setup_network.md`. `deployment/rehearsal_all_trips.py`
-calls every trip through the API and prints the scorecards, for a rehearsal before the demo. The setup was exercised with a second machine on the same network reaching Laptop 1 by its LAN address (Figure 22).
+calls every trip through the API and prints the scorecards, for a rehearsal before the demo. The setup was exercised with a second machine on the same network reaching Laptop 1 by its LAN address (Figures 22 and 23).
+
+![Health check from Laptop 2](figures/laptop2_health_check.png){width=100%}
+
+*Figure 23. Health check issued from Laptop 2 (Windows PowerShell) to Laptop 1: HTTP 200, with the response reporting `client_connected` as Laptop 2's address (10.30.202.38), which confirms the request crossed the network rather than looping back. (In PowerShell `curl` is an alias for `Invoke-WebRequest`, hence the confirmation prompt; `curl.exe` avoids it.)*
 
 ### 7.6 Final-evaluation partition: pre-demo end-to-end run
 
