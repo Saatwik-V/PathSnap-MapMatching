@@ -25,7 +25,7 @@ from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 # Ensure repository root is on sys.path
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -149,6 +149,22 @@ def get_evaluation_trips():
         "count": len(trips),
         "data_root": data_root
     }
+
+
+@app.get("/report")
+@app.get("/report.pdf")
+def download_technical_report():
+    """
+    Serves the official PathSnap Technical Report PDF for Laptop 2 or Evaluators.
+    """
+    pdf_path = os.path.join(REPO_ROOT, "report", "PathSnap_Technical_Report.pdf")
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="Technical report PDF not found on server.")
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename="PathSnap_Technical_Report.pdf"
+    )
 
 
 @app.post("/predict/{trip_id}")
