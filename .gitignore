@@ -15,9 +15,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Large dataset folders (keep raw data local, only commit small sample / configs)
-# Uncomment the line below if GitHub repository size exceeds limits
-# Student folder/
+# Large dataset folders and course materials
+Student folder/
+PathSnap_student_materials/
 
 # Experiment artifacts & temporary logs
 *.log
