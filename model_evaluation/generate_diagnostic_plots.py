@@ -171,8 +171,113 @@ def plot_static_route_map(
     print(f"Saved: {output_path}")
 
 
+def plot_student_test_comparison(
+    csv_path: str = "results/five_model_comparison.csv",
+    output_path: str = "results/plots/student_test_top1_f1_comparison.png",
+):
+    df = pd.read_csv(csv_path)
+    top1 = df["Student-Test Top-1 Accuracy"].astype(str).str.rstrip("%").astype(float) / 100
+    short = df["Model"].str.replace("Histogram Gradient Boosting", "HistGB").str.replace("Multi-Layer Perceptron (MLP)", "MLP", regex=False) \
+        .str.replace("Distance-Weighted k-NN", "k-NN")
+    x = np.arange(len(df))
+    fig, ax = plt.subplots(figsize=(8.5, 4.6))
+    b1 = ax.bar(x - 0.2, top1, 0.4, label="Student-Test Top-1 Accuracy", color="#4c78a8", edgecolor="black")
+    b2 = ax.bar(x + 0.2, df["Student-Test Macro F1"], 0.4, label="Student-Test Macro F1", color="#f58518", edgecolor="black")
+    for bars in (b1, b2):
+        for b in bars:
+            ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 0.005, f"{b.get_height():.3f}", ha="center", fontsize=8)
+    ax.set_xticks(x); ax.set_xticklabels(short, rotation=12)
+    ax.set_ylim(0.6, 0.92); ax.set_ylabel("Score")
+    ax.set_title("Held-out Student-Test Performance (10 trips, 191,600 candidate rows)", fontweight="bold", fontsize=11)
+    ax.legend(loc="lower right")
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=DPI); plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_model_selection_tradeoff(
+    csv_path: str = "results/five_model_comparison.csv",
+    output_path: str = "results/plots/model_selection_tradeoff.png",
+):
+    df = pd.read_csv(csv_path)
+    top1 = df["Student-Test Top-1 Accuracy"].astype(str).str.rstrip("%").astype(float)
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.scatter(df["Train Time (s)"], df["Student-Test Macro F1"], s=(top1 - 70) * 40 + 60, c="#4c78a8", edgecolor="black", alpha=0.85)
+    for _, r in df.iterrows():
+        ax.annotate(r["Model"].replace("Histogram Gradient Boosting", "HistGB").replace("Multi-Layer Perceptron (MLP)", "MLP"),
+                    (r["Train Time (s)"], r["Student-Test Macro F1"]), textcoords="offset points", xytext=(8, 6), fontsize=8)
+    ax.set_xscale("log")
+    ax.set_xlim(0.5, 600)
+    ax.set_ylim(0.752, 0.798)
+    ax.set_xlabel("Training time on 2.08M rows (s, log scale)")
+    ax.set_ylabel("Student-Test Macro F1")
+    ax.set_title("Model selection: accuracy vs training cost\n(marker size = Student-Test Top-1 Accuracy)", fontweight="bold", fontsize=11)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=DPI); plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_optuna_history(
+    csv_path: str = "results/optuna_trials.csv",
+    output_path: str = "results/plots/optuna_history.png",
+):
+    df = pd.read_csv(csv_path)
+    num, val = "trial", "cv_macro_f1"
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    ax.plot(df[num], df[val], "o", color="#9e9e9e", label="Trial CV Macro F1")
+    ax.plot(df[num], df[val].cummax(), "-", color="#2ca02c", linewidth=2, label="Best so far")
+    ax.set_xlabel("Trial"); ax.set_ylabel("CV Macro F1 (GroupKFold, 3 folds)")
+    ax.set_title("Optuna TPE optimisation history (HistGradientBoosting, 30 trials)", fontweight="bold", fontsize=11)
+    ax.legend(loc="lower right")
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=DPI); plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_training_histories(
+    mlp_path: str = "results/best_model.joblib",
+    histgb_path: str = "results/best_tuned_model.joblib",
+    output_path: str = "results/plots/training_histories.png",
+):
+    """
+    Per-iteration histories read straight from the fitted model objects (no retraining, nothing
+    synthesised). Only models that actually store one are plotted: MLP (loss_curve_ and
+    validation_scores_) and HistGradientBoosting (train_score_/validation_score_, stored as
+    negative loss). Logistic Regression (lbfgs), k-NN and Random Forest keep no epoch history.
+    """
+    mlp = joblib.load(mlp_path)["model"]
+    hgb = joblib.load(histgb_path)["model"]
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+
+    ep = np.arange(1, len(mlp.loss_curve_) + 1)
+    axes[0].plot(ep, mlp.loss_curve_, color="#d62728", label="Training loss (log loss)")
+    axes[0].set_xlabel("Epoch"); axes[0].set_ylabel("Training loss", color="#d62728")
+    ax2 = axes[0].twinx()
+    ax2.plot(ep, mlp.validation_scores_, color="#1f77b4", label="Validation accuracy")
+    ax2.set_ylabel("Validation accuracy", color="#1f77b4"); ax2.grid(False)
+    axes[0].set_title(f"MLP: stopped by early stopping at epoch {mlp.n_iter_} of {mlp.max_iter}", fontsize=10, fontweight="bold")
+
+    it = np.arange(1, len(hgb.train_score_) + 1)
+    axes[1].plot(it, -hgb.train_score_, color="#2ca02c", label="Training loss")
+    axes[1].plot(it, -hgb.validation_score_, color="#ff7f0e", label="Validation loss (internal 10% split)")
+    axes[1].set_xlabel("Boosting iteration"); axes[1].set_ylabel("Log loss")
+    axes[1].set_title("Tuned HistGradientBoosting: loss per iteration", fontsize=10, fontweight="bold")
+    axes[1].legend()
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=DPI); plt.close()
+    print(f"Saved: {output_path}")
+
+
 if __name__ == "__main__":
     plot_confusion_matrix()
     plot_tuned_vs_untuned()
     plot_hmm_continuity_gain()
     plot_static_route_map()
+    plot_student_test_comparison()
+    plot_model_selection_tradeoff()
+    plot_optuna_history()
+    plot_training_histories()

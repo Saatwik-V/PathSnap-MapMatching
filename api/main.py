@@ -34,6 +34,7 @@ if REPO_ROOT not in sys.path:
 
 from api.utils import (
     find_dataset_root,
+    find_trip_folder,
     list_available_trips,
     load_trip_data,
     reconstruct_route_pipeline,
@@ -165,6 +166,9 @@ def predict_and_evaluate(trip_id: str, request: Request):
     print(f"[{timestamp}] Client IP: {client_ip} | Trip ID: {trip_id}")
 
     try:
+        # Ground truth for the final-evaluation partition stays server-side: metrics only, no reference geometry.
+        is_evaluator_trip = os.path.basename(os.path.dirname(find_trip_folder(trip_id))) == "evaluator_test"
+
         # 1. Load Trip Data
         data = load_trip_data(trip_id)
         track_df = data["track"]
@@ -262,10 +266,10 @@ def predict_and_evaluate(trip_id: str, request: Request):
                 "arc_ids": seq_pred_arcs,
                 "coordinates": predicted_coords
             },
-            "reference_route": {
+            **({} if is_evaluator_trip else {"reference_route": {
                 "arc_ids": gt_route_arcs,
                 "coordinates": reference_coords
-            },
+            }}),
             "raw_gps": raw_gps
         }
 

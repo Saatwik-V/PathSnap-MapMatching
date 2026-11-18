@@ -199,6 +199,7 @@ def run_5_model_study(
     continuity_by_model = {}
     student_f1_by_model = {}
     student_top1_by_model = {}
+    student_ll_by_model = {}
 
     if os.path.exists(student_test_csv) and os.path.isdir(hmm_base_dir):
         from hmm_viterbi.viterbi import evaluate_trips
@@ -212,6 +213,7 @@ def run_5_model_study(
             probs_t = clf.predict_proba(Xt_in)[:, 1]
             preds_t = (probs_t >= 0.5).astype(int)
             student_f1_by_model[m_name] = f1_score(yt, preds_t, average="macro", zero_division=0)
+            student_ll_by_model[m_name] = log_loss(yt, np.clip(probs_t, 1e-15, 1 - 1e-15))
 
             eval_df = test_df.copy()
             eval_df["prob"] = probs_t
@@ -237,6 +239,7 @@ def run_5_model_study(
             name = row["Model"]
             row["Student-Test Top-1 Accuracy"] = f"{round(student_top1_by_model.get(name, float('nan')) * 100, 2)}%"
             row["Student-Test Macro F1"] = round(student_f1_by_model.get(name, float("nan")), 4)
+            row["Student-Test Log Loss"] = round(student_ll_by_model.get(name, float("nan")), 4)
             row["Route Continuity"] = f"{round(continuity_by_model.get(name, float('nan')), 2)}%"
     else:
         print("    [warn] Skipping student-test/HMM evaluation: test_features.csv or student_test trips not found.")

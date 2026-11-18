@@ -20,13 +20,13 @@
   5. The Viterbi recurrence algorithm runs dynamic programming in log-space over the directed graph $G = (V, E)$, calculating shortest Dijkstra paths in real time.
   6. Server-side ground-truth evaluation dynamically compares predicted arc IDs against the private server-side `.route` file.
   7. Latency is measured using Python's hardware clock `time.perf_counter()`.
-- **Zero Leakage:** The ground-truth `.route` file is strictly quarantined on Laptop 1. The client UI on Laptop 2 **never receives or sees the reference route** prior to prediction.
+- **Zero Leakage:** The ground-truth `.route` file is read only on Laptop 1, server-side. For evaluator-partition trips the API returns **no reference-route geometry at all** (only metrics, the predicted route and raw GPS), and Laptop 2 holds no `.route` files for them, so the UI cannot draw or see the answer. (Reference geometry is returned only for `student_test` trips, used for the report's maps.)
 
 ---
 
 ## 2. The Route Continuity Breakthrough: How It Shot Up to 99.1%
 
-> **Examiner Grill:** *"Why was raw classifier route continuity only ~76.8%, and how did you get it to shoot up to 92.4% and then 99.1%? Explain the exact mathematics."*
+> **Examiner Grill:** *"Why was raw classifier route continuity only ~76.8%, and how did you get it up to 90.4% and then 99.1%? Explain the exact mathematics."*
 
 ### Step 1: Why the Raw Classifier Fails (Continuity = 76.82%)
 - A standard supervised classifier predicts the most likely road segment for each GPS point independently:
@@ -75,19 +75,19 @@
 
 ### The 4-Pillar Engineering Justification:
 
-| Evaluation Dimension | Multi-Layer Perceptron (MLP) | HistGradientBoosting (Tuned) | Winner & Practical Rationale |
+| Evaluation Dimension | Multi-Layer Perceptron (MLP) | HistGradientBoosting | Winner & Practical Rationale |
 |---|---|---|:---:|
-| **Cross-Validation Macro F1** | **0.7952** | 0.7908 | **MLP** (+0.0044 marginal lead) |
-| **Held-Out Student-Test Top-1** | 84.16% | **84.88%** | **HistGB** (+0.72% better generalization) |
-| **Held-Out Evaluator-Test Top-1** | 85.20% | **86.30%** | **HistGB** (+1.10% better generalization) |
-| **Training Time (2.08M rows)** | 105.84 s | **5.68 s** | **HistGB is ~18.6x faster** |
-| **30-Trial Bayesian Search** | ~1.5 hours | **~12 minutes** | **HistGB enables Optuna search** |
-| **Inference Latency** | 0.004 ms / point | **0.001 ms / point** | **HistGB is 4x faster at serving** |
-| **Preprocessing Overhead** | Requires `StandardScaler` | **Native histogram binning** | **HistGB has no scaling pipeline drift** |
+| **Cross-Validation Macro F1 (5-fold, untuned)** | **0.7952** | 0.7908 | **MLP** (+0.0044, marginal) |
+| **Held-Out Student-Test Top-1** | 84.16% | **84.88%** (tuned: 84.99%) | **HistGB** (+0.72 pt) |
+| **Held-Out Student-Test Macro F1** | **0.7935** | 0.7910 (tuned: 0.7937) | **MLP by 0.0025 untuned; tied once HistGB is tuned** |
+| **Training time (2.08M rows)** | ~108 s | **~6 s** | **HistGB ~19x faster** |
+| **30-trial Bayesian search** | ~1.5 h (estimate: 30 trials x 3 folds x ~60-70 s; **not run**) | **~14 min (835 s, measured)** | **HistGB makes the search practical** |
+| **Inference latency per candidate row** | < 0.001 ms | ~0.001 ms | **Tie** (both negligible next to the ~1 s per-trip pipeline latency, dominated by candidate generation and graph search) |
+| **Preprocessing** | Requires `StandardScaler` | None needed | **HistGB has one fewer artifact to keep in sync at serving time** |
 
-1. **Held-Out Superiority:** While MLP had a tiny 0.0044 lead in training CV, HistGradientBoosting achieved higher Top-1 accuracy on both held-out test partitions (`student_test` and `evaluator_test`).
-2. **Computational Feasibility (The Deciding Factor):** Per the hackathon guidelines, computational efficiency and latency are primary grading criteria. Training an MLP on 2.08 million rows takes ~106 seconds per fit. A 30-trial Optuna search across 3 folds would have taken over 1.5 hours. HistGradientBoosting fits in **5.68 seconds** (~19x faster), making Bayesian TPE optimization practical.
-3. **Serving Latency:** HistGradientBoosting evaluates decision trees over pre-computed 256-bin integer histograms, executing in **0.001 ms** per observation without floating-point matrix multiplication.
+1. **Honest summary:** the two models are essentially tied on held-out quality. HistGB is ahead on student-test Top-1; MLP is marginally ahead on student-test Macro F1 and CV Macro F1. We did **not** run the MLP on the evaluator partition, so we make no evaluator-test comparison between them.
+2. **Computational feasibility (the deciding factor):** the Models and Training Guidelines name generalisation, inference speed and compatibility with the sequential decoder as selection criteria, not CV F1 alone. An MLP fit takes ~108 s on 2.08 million rows, so a 30-trial, 3-fold Optuna search would take on the order of 1.5 hours (our estimate, not measured). HistGradientBoosting fits in ~6 s, so the real search took ~14 minutes.
+3. **Result of tuning:** modest. Tuned HistGB reached CV Macro F1 0.797 (3-fold Optuna objective), student-test Top-1 84.99% (+0.11 pt over untuned) and student-test Macro F1 0.7937. Say this plainly; do not claim a large tuning gain.
 
 ---
 
@@ -114,20 +114,32 @@
 
 ## 6. Defending Evaluator-Test Scores & The Outlier Trips
 
-> **Examiner Grill:** *"Why did Trip `00000015` only get 62.4% Top-1 accuracy, and why did Trip `00000023` get 73.8%?"*
+> **Examiner Grill:** *"Why did Trip `00000015` only get 62.4% Top-1 accuracy while its route continuity is 100%? And why did Trip `00000023` get 73.8%?"*
 
-### Overall Scorecard Context:
-- **10 Evaluator Trips Mean:** **86.3% Top-1 Accuracy**, **99.1% Route Continuity**, **1,012 ms Latency**.
-- **7 out of 10 trips are above 88% Top-1** (with `00000073` at **95.2%**, `00000067` at **95.0%**, `00000049` at **93.9%**, `00000017` at **91.8%**).
+Every number below is reproducible: `results/evaluator_predemo_run.json` (scores) and `results/direction_error_analysis.csv` (diagnostics, produced by `model_evaluation/analyze_direction_errors.py`).
 
-### Defending Trip `00000015` (62.4% Top-1, 100.0% Continuity):
-1. **The Ground Truth Asymmetry:** Trip `00000015` has **6,854 GPS observations (~2 hours of driving)**, but the reference `.route` file contains only **136 unique road segments**.
-2. **Recall is 99.26%:** Our model identified **135 out of the 136 ground-truth road segments**.
-3. **The Precision Trade-off:** Over a 2-hour drive through complex interchanges and roundabouts, the simplified ground truth skipped intermediate connector links. To satisfy **100.0% physical road connectivity**, our HMM decoder bridged all junctions with legal road arcs. This dropped point-matching precision while achieving a 100% drivable trajectory without teleports.
+### Overall scorecard context
+- **10 evaluator trips, mean:** 86.3% Top-1, 99.1% route continuity, ~1,012 ms latency. (Student-test mean Top-1 was 88.9%, so the system generalises.)
+- **7 of 10 trips are above 88% Top-1** (`00000073` 95.2%, `00000067` 95.0%, `00000049` 93.9%, `00000017` 91.8%, `00000059` 91.8%, `00000094` 89.3%, `00000087` 88.2%).
 
-### Defending Trip `00000023` (73.8% Top-1, 99.3% Continuity):
-1. **Sample Size Effect:** Trip `00000023` is the **shortest trip in the entire dataset (only 458 GPS points / ~7.6 minutes)**.
-2. **Cold-Start GPS Drift:** GPS receivers require 30–45 seconds for satellite geometry lock, causing initial multipath drift. In a 7-minute trip, a 45-second initial drift represents **~10–12% of all points**, disproportionately lowering the observation accuracy. Once moving, the route achieved **99.3% continuity**.
+### The key idea: continuity is not accuracy
+**Route Continuity** only asks whether consecutive predicted arcs connect in the road graph (a drivable path). **Top-1** asks whether each GPS point's predicted arc is actually on the reference route. A path can be perfectly connected and still run along the wrong arcs. Never present continuity as a proxy for correctness.
+
+### Defending Trip `00000015` (62.4% Top-1, 100.0% continuity)
+1. **Largest trip:** 6,854 GPS points (about 1.9 hours at 1 Hz) on a 136-arc reference route, so one systematic mistake costs a lot.
+2. **What the numbers say:** reference-arc recall is **99.26%** (135 of 136 route arcs appear in our predicted set) but predicted-set precision is only **36.3%**: we predict many arcs that are not on the route.
+3. **Measured cause:** **80% of the 2,580 wrong points are the opposite-direction twin of a route arc.** The decoder found the right street but travelled it the wrong way. Ignoring direction, Top-1 would be **92.5%**. The errors are **short bursts, not a sustained wrong-way drive**: 1,355 separate runs with a median length of 2 points (longest 75; only 16% of wrong points sit in runs of 5 or more). The decoder flips point by point between an arc and its reverse twin. The twin shares both endpoint nodes with the arc, so the path stays connected, which is why continuity stays at 100%.
+4. **Why (our hypothesis, not a tested result):** the two directions of a street overlap almost exactly, so the classifier scores them alike, and in our HMM transition term moving to the reverse twin has graph distance 0, exactly like staying on the same arc, so both are penalised identically and nothing discourages the flip. (That this is the cause is our hypothesis; that the flips happen is measured.)
+5. **It is systematic, not a one-off:** the weakest student-test trip (`00000077`) has the same signature (76.3% strict Top-1, 91.6% ignoring direction, 65% of errors are reverse twins).
+6. **What we would do next:** add a heading / direction-of-travel consistency term to the HMM transition. We did not, because it was identified after the decoder was frozen and would require re-running the benchmark, tuning and report.
+7. **Do not say** that the reference route "skipped connector links" or that connectivity repair caused the errors: the evidence does not support either. Repair never changes the per-point assignment (see Section 3).
+
+### Defending Trip `00000023` (73.8% Top-1, 99.3% continuity)
+1. **Short trip:** 458 GPS points, the shortest of the 10 evaluator trips (not of the whole dataset: a training trip has 361 points).
+2. **Different failure from `00000015`:** only 2.5% of its errors are direction flips. Instead, **18.3% of its points have none of the 10 nearest candidate arcs on the reference route** (the other evaluator trips are at 1% to 4.5%). Where the true arc is not among the candidates, no decoder can be right.
+3. **Likely reasons (consistent with the data, not proven):** GPS far from the reference route's arcs, through noise or drift, or an imperfect reference route (the Dataset Exploration PDF explicitly warns the reference is not error-free).
+4. **Sustained, not flickering:** unlike `00000015`, its errors come in longer runs (median 4 points; 83% of wrong points are in runs of 5 or more), which matches stretches where the GPS is far from the reference route.
+5. **Start-up effect, partly:** the error rate is 51.7% in the first 60 points versus 22.4% afterwards, which is consistent with initial GPS drift, but most of the no-candidate points occur later in the trip, so drift at the start explains only part of the gap.
 
 ---
 
@@ -142,4 +154,14 @@ $$\Delta x = (\lambda - \lambda_0) \cdot \frac{\pi}{180} \cdot R_{\text{earth}} 
 guaranteeing sub-meter Euclidean accuracy (<0.1% distortion) globally."
 
 ### Q: Why did you evaluate and reject Probability Calibration (Isotonic Regression)?
-**A:** "We trained `CalibratedClassifierCV(method='isotonic')` to evaluate Platt scaling and isotonic regression. While calibration improved the Brier score and log loss, **it did not alter the argmax candidate ranking** (Top-1 accuracy stayed identical). However, it inflated the serialized model artifact from **<1 MB to 88 MB**, increasing memory footprint and API startup time. In production engineering, an 88x model size penalty for zero accuracy gain was rejected."
+**A:** "We trained `CalibratedClassifierCV(method='isotonic')` to evaluate Platt scaling and isotonic regression. Calibration improved log loss (0.4719 to 0.4539) and Brier score (0.1411 to 0.1399), but **no accuracy metric improved**: student-test Top-1 went from 84.99% to 84.94%, Macro F1 from 0.7937 to 0.7898, and HMM pointwise accuracy from 88.86% to 88.81%. It also grew the saved model from about **1.4 MB to about 88 MB** (roughly 60x), because `CalibratedClassifierCV` keeps one calibrated model per fold. We rejected a 60x size penalty for no accuracy gain."
+
+---
+
+## 8. Known Limitations (say these before the examiner finds them)
+
+1. **Direction ambiguity** is our largest identified error source (Section 6). Not fixed; the fix is a direction-aware HMM transition.
+2. **Top-1 is set membership**: the predicted arc must be anywhere on the reference route's arc set; it ignores visit order and counts the reverse twin of a route arc as wrong.
+3. **Continuity is boosted by the repair step by construction.** Always quote it with Top-1, and quote the HMM-only value (90.4%) too; the HMM alone does not reach 95%.
+4. **Small tuning and calibration gains.** All five model families land within about 0.04 student-test Macro F1 of each other, which points at the feature set, not the algorithm, as the ceiling.
+5. **Per-trip variance is large** (evaluator Top-1 from 62.4% to 95.2%), so the 10-trip mean should always be read with that spread.

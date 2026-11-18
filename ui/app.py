@@ -78,7 +78,7 @@ with col_ctrl2:
 if evaluate_button:
     with st.spinner(f"Running inference on Laptop 1 for Trip {selected_trip}..."):
         try:
-            pred_resp = requests.post(f"{api_base_url}/predict/{selected_trip}", timeout=10)
+            pred_resp = requests.post(f"{api_base_url}/predict/{selected_trip}", timeout=60)
             if pred_resp.status_code == 200:
                 data = pred_resp.json()
                 metrics = data.get("metrics", data)  # supports flat or nested {"metrics": {...}} response shapes
@@ -171,20 +171,32 @@ if evaluate_button:
                 st.subheader(f"Interactive Trajectory Map — Trip {selected_trip}")
                 
                 # Load local trip files for background map layers
-                base_dir = "Student folder/student_test"
-                trip_dir = os.path.join(base_dir, selected_trip)
+                # Same partition priority as the API: evaluator_test first, student_test fallback.
+                trip_dir = next(
+                    (d for d in (os.path.join("Student folder", part, selected_trip)
+                                 for part in ("evaluator_test", "student_test"))
+                     if os.path.isdir(d)),
+                    os.path.join("Student folder", "student_test", selected_trip),
+                )
                 
                 if os.path.exists(os.path.join(trip_dir, f"{selected_trip}.track")):
                     track_df = pd.read_csv(os.path.join(trip_dir, f"{selected_trip}.track"), sep=r"\s+", header=None, names=["lon", "lat", "timestamp"])
                     nodes_df = pd.read_csv(os.path.join(trip_dir, f"{selected_trip}.nodes"), sep=r"\s+", header=None, names=["lon", "lat"])
                     arcs_df = pd.read_csv(os.path.join(trip_dir, f"{selected_trip}.arcs"), sep=r"\s+", header=None, names=["u", "v"])
-                    route_df = pd.read_csv(os.path.join(trip_dir, f"{selected_trip}.route"), sep=r"\s+", header=None, names=["arc_id"])
+                    # Ground truth is never read or drawn for the final-evaluation partition, even if a
+                    # .route file happens to exist on this machine; it is used only for student_test maps.
+                    route_file = os.path.join(trip_dir, f"{selected_trip}.route")
+                    is_evaluator_trip = os.path.basename(os.path.dirname(trip_dir)) == "evaluator_test"
+                    reference_arcs = (
+                        pd.read_csv(route_file, sep=r"\s+", header=None, names=["arc_id"])["arc_id"].values.tolist()
+                        if (not is_evaluator_trip and os.path.exists(route_file)) else None
+                    )
                     
                     folium_map = build_trip_map(
                         track_df=track_df,
                         nodes_df=nodes_df,
                         arcs_df=arcs_df,
-                        route_arcs=route_df["arc_id"].values.tolist(),
+                        route_arcs=reference_arcs,
                         predicted_arcs=predicted_arc_ids,
                         trip_id=selected_trip
                     )

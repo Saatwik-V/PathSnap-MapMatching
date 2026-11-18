@@ -79,6 +79,11 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ---
 
+### Laptop 2: Copy the trip data first (one time, before the demo)
+`Student folder/` is **not in git**, so `git pull` does not bring it. The UI reads the road network and GPS points locally to draw the map, so without the data the scorecards appear but the map does not.
+1. Copy `Student folder/evaluator_test/` (10 trip folders) from Laptop 1 to the same relative path in the repo on Laptop 2, by USB or AirDrop. Only `.track`, `.nodes` and `.arcs` are needed; **the `.route` files are not needed on Laptop 2 and should not be copied** (the ground truth stays on Laptop 1).
+2. Check: `ls "Student folder/evaluator_test" | wc -l` prints `10`.
+
 ### Laptop 2: Launch Streamlit Evaluator Portal (Uttam)
 Open terminal in the repository root directory on Laptop 2:
 
@@ -115,7 +120,7 @@ Follow this exact step-by-step sequence when the faculty panel arrives:
    - Point out the green badge: `✅ Connected to Laptop 1 API`.
 2. **Select a Star Trip from the Dropdown**:
    - Select **Trip `00000073`** or **Trip `00000067`** from the dropdown.
-   *(These trips showcase >95% Top-1 accuracy and 99.5-100% route continuity in sub-second latency).*
+   *(These trips score about 95% Top-1 with 99.5-100% route continuity in well under a second of latency).*
 3. **Click `🚀 Snap Route & Evaluate`**:
    - Click the red button on Laptop 2.
 
@@ -125,35 +130,37 @@ Follow this exact step-by-step sequence when the faculty panel arrives:
 1. **Immediately Direct Evaluator's Eyes to Laptop 1 Terminal**:
    - Show the real-time server logs streaming live:
      ```text
-     [EVALUATION REQUEST] POST /predict/00000073
-     Client IP: 10.30.202.x | Trip ID: 00000073
-     Data Ingestion: Loaded 1,144 GPS points | 2,150 nodes | 4,510 arcs
-     Sequential Decoding: Running HMM Viterbi road network snapping...
-     Server-Side Ground-Truth Evaluation Results:
+     ================================================================================
+     [2026-11-18 16:38:44] [EVALUATION REQUEST] POST /predict/00000073
+     [2026-11-18 16:38:44] Client IP: 127.0.0.1 | Trip ID: 00000073
+     [2026-11-18 16:38:44] Data Ingestion: Loaded 1,144 GPS points | 12,151 nodes | 25,631 arcs | 238 ground-truth arcs
+     [2026-11-18 16:38:44] Sequential Decoding: Running HMM Viterbi road network snapping...
+     [2026-11-18 16:38:44] Server-Side Ground-Truth Evaluation Results:
          ├── Observation Top-1 Accuracy : 95.19%
          ├── Route Continuity %         : 100.00%
          ├── Macro F1-Score             : 0.8577
-         ├── Sequential Decode Time     : 520.12 ms
-         └── Total Inference Latency    : 568.40 ms
-     Response Status: 200 OK | Predicted 204 continuous arcs
+         ├── Sequential Decode Time     : 368.95 ms
+         └── Total Inference Latency    : 567.16 ms
+     [2026-11-18 16:38:44] Response Status: 200 OK | Predicted 368 continuous arcs
+     ================================================================================
      ```
-   - Emphasize: *"Notice that the server executed 12-feature candidate extraction, tree scoring, and Viterbi dynamic programming across 1,144 points in just 568 milliseconds."*
+   - Emphasize: *"Notice that the server executed 12-feature candidate extraction, tree scoring, and Viterbi dynamic programming across 1,144 points in about 570 milliseconds."* (The numbers above were captured from a real run of this trip; yours will differ by a few milliseconds.)
 
 2. **Return to Laptop 2 to Inspect the Interactive Results**:
    - **Scorecards**: Point out the 4 modern dark cards:
      * **Top-1 Accuracy**: `95.2%` (with blue progress fill bar)
-     * **Macro F1**: `0.858` (with purple accent)
+     * **Macro F1**: `0.858` (with purple accent; this is the route-level F1 between predicted and reference arc sets, not the candidate-classifier Macro F1 in the report)
      * **Route Continuity**: `100.0%` (with mint green fill bar)
-     * **Inference Latency**: `568.4 ms` (with amber accent)
-   - **Status Alert**: Point out `✅ HMM Viterbi decoding complete — 204 continuous road arcs reconstructed.`
+     * **Inference Latency**: about `567 ms` (with amber accent)
+   - **Status Alert**: Point out `✅ HMM Viterbi decoding complete — 368 continuous road arcs reconstructed.`
    - **Interactive Folium Map**:
      * Point out the **auto-fit bounds** framing the trajectory perfectly in the center.
      * Point out the **floating legend** in the bottom-left corner explaining the 4 layers.
-     * Open **LayerControl** in top-right: Toggle off the blue GPS dots to show the bold red dashed line snapped directly on top of the green reference road.
+     * Open **LayerControl** in top-right: toggle the blue GPS dots off to show the red path snapped onto the grey road network. **There is no green reference layer for evaluator trips, by design:** ground truth stays on Laptop 1, and accuracy is read from the scorecards and Laptop 1's log. (For `student_test` trips the green reference route is shown.)
      * Hover over a blue GPS dot to show the tooltip with observation index, time, and instant velocity in m/s.
    - **Offline Export Button**:
      * Click **"⬇️ Download Interactive HTML Map"**.
-     * Show that the HTML map downloads instantly (`trip_00000073_map.html`, ~700KB) and can be opened in any standalone web browser without Python.
+     * Show that the HTML map downloads instantly (`trip_00000073_map.html`, under 1 MB) and can be opened in any standalone web browser without Python.
 
 ---
 
@@ -163,11 +170,11 @@ If the evaluators let you pick or ask to test multiple trips, use this reference
 
 | Trip ID | GPS Points | Top-1 Accuracy | Route Continuity | Latency | Why It's Great for Live Demo |
 |---|:---:|:---:|:---:|:---:|---|
-| **`00000073`** | 1,144 | **95.2%** | **100.0%** | **568 ms** | **Best overall demo trip.** Ultra-fast, perfect continuity, high accuracy. |
-| **`00000067`** | 916 | **95.0%** | **99.5%** | **282 ms** | **Fastest inference.** Instant sub-300ms return, beautiful urban path. |
-| **`00000049`** | 2,642 | **93.9%** | **98.4%** | **1,136 ms** | Demonstrates scaling over longer 2,600-point trajectory. |
-| **`00000017`** | 1,346 | **91.8%** | **100.0%** | **1,255 ms** | Perfect 100.0% continuity on divided corridor. |
-| **`00000015`** | 6,854 | **62.4%** | **100.0%** | **2,700 ms** | *Edge Case Trip:* 2-hour drive with 99.26% recall. Use only with prepared defense! |
+| **`00000073`** | 1,144 | **95.2%** | **100.0%** | **567 ms** | **Best overall demo trip.** Ultra-fast, perfect continuity, high accuracy. |
+| **`00000067`** | 916 | **95.0%** | **99.5%** | **278 ms** | **Fastest inference.** Instant sub-300ms return, beautiful urban path. |
+| **`00000049`** | 2,642 | **93.9%** | **98.4%** | **1,106 ms** | Demonstrates scaling over longer 2,600-point trajectory. |
+| **`00000017`** | 1,346 | **91.8%** | **100.0%** | **1,265 ms** | Perfect 100.0% continuity on divided corridor. |
+| **`00000015`** | 6,854 | **62.4%** | **100.0%** | **2,372 ms** | *Edge case:* largest trip (~1.9 h). 99.26% reference-arc recall but 36% precision, because 80% of its errors are the opposite-direction twin of a route arc. Use only with the prepared defence in `FINAL_REVIEW_GRILL_GUIDE.md` Section 6. |
 
 ---
 

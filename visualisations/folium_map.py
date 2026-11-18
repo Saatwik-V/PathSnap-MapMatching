@@ -179,6 +179,9 @@ def build_trip_map(
     folium.LayerControl(collapsed=False).add_to(m)
 
     # Floating legend (fixed position, always visible regardless of toggled layers)
-    m.get_root().html.add_child(folium.Element(LEGEND_HTML))
+    legend = LEGEND_HTML
+    if route_arcs is None:
+        legend = "\n".join(l for l in LEGEND_HTML.splitlines() if "Ground-Truth Reference Route" not in l)
+    m.get_root().html.add_child(folium.Element(legend))
 
     return m

@@ -29,3 +29,6 @@ results/train_features.csv
 # Calibrated model experiment output (88MB, not adopted as production; regenerate via model_training/calibrate_model.py)
 results/best_calibrated_model.joblib
 results/_tmp_*.joblib
+
+# Intermediate report build output (HTML); regenerate with report/build_report.py
+report/_build/

@@ -214,12 +214,13 @@ def run_optuna_study(
     # Untuned baseline is re-scored on the SAME student-test partition as the tuned model
     # (earlier versions mixed the baseline's 5-fold CV Top-1/log-loss with the tuned
     # model's student-test numbers, which overstated the tuning gain).
-    untuned_top1, untuned_ll_test = np.nan, np.nan
+    untuned_top1, untuned_ll_test, untuned_f1_test = np.nan, np.nan, np.nan
     if untuned_row and family == "histgb" and os.path.exists(test_path):
         base_clf = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, l2_regularization=0.1, random_state=42)
         base_clf.fit(X, y)
         probs_u = base_clf.predict_proba(Xt)[:, 1]
         untuned_ll_test = log_loss(yt, probs_u)
+        untuned_f1_test = f1_score(yt, (probs_u >= 0.5).astype(int), average="macro", zero_division=0)
         u = test_df.copy()
         u["prob"] = probs_u
         untuned_top1 = u.sort_values(["trip_id", "obs_idx", "prob"], ascending=[True, True, False]) \
@@ -229,12 +230,14 @@ def run_optuna_study(
         "Variant": f"{family} (UNTUNED)" if untuned_row else f"{family} (baseline unavailable)",
         "CV Macro F1": untuned_row.get("CV Macro F1") if untuned_row else np.nan,
         "Student-Test Top-1 Accuracy": f"{round(untuned_top1 * 100, 2)}%" if not np.isnan(untuned_top1) else "N/A",
+        "Student-Test Macro F1": round(untuned_f1_test, 4) if not np.isnan(untuned_f1_test) else "N/A",
         "Student-Test Log Loss": round(untuned_ll_test, 4) if not np.isnan(untuned_ll_test) else "N/A",
         "Inference Latency (ms)": untuned_row.get("Inference Latency (ms)") if untuned_row else np.nan,
     }, {
         "Variant": f"{family} (TUNED via Optuna, {n_trials} trials)",
         "CV Macro F1": round(study.best_value, 4),
         "Student-Test Top-1 Accuracy": f"{round(tuned_top1 * 100, 2)}%" if not np.isnan(tuned_top1) else "N/A",
+        "Student-Test Macro F1": round(tuned_f1_test, 4) if not np.isnan(tuned_f1_test) else "N/A",
         "Student-Test Log Loss": round(tuned_ll_test, 4) if not np.isnan(tuned_ll_test) else "N/A",
         "Inference Latency (ms)": round(tuned_latency_ms, 3) if not np.isnan(tuned_latency_ms) else "N/A",
     }]

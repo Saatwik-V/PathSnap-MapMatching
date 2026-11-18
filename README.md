@@ -75,7 +75,8 @@ PathSnap-MapMatching/
 │   └── setup_network.md            # Step-by-step 2-laptop LAN hotspot configuration and IP setup guide
 ├── report/
 │   ├── TECHNICAL_REPORT.md         # Mandatory 7-section consolidated technical report source
-│   ├── generate_report_pdf.py      # Compiles the report into a PDF, reading all numbers live from results/
+│   ├── build_report.py             # Builds the PDF from TECHNICAL_REPORT.md (pandoc + headless Chrome)
+│   ├── figures/                    # Real screenshots used in the report (UI, Folium maps, Laptop 1 terminal)
 │   └── PathSnap_Technical_Report.pdf # Generated submission PDF
 ├── results/
 │   ├── best_model.joblib           # Untuned champion model weights (MLP, highest CV Macro F1)
@@ -133,15 +134,15 @@ then evaluated once, untouched, on the 10 held-out student-test trips (including
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Logistic Regression | Linear | 0.7444 | 70.77% | 82.06% | 0.7594 | 99.22% | 0.5087 | 1.10s |
 | Distance-Weighted k-NN | Instance-based | 0.7526 | 69.50% | 80.68% | 0.7568 | 99.05% | 2.5580 | 0.67s |
-| Random Forest | Ensemble | 0.7856 | 73.00% | 84.75% | 0.7869 | 99.01% | 0.4153 | 46.60s |
-| **HistGradientBoosting** | Boosting | 0.7908 | 73.09% | **84.88%** | **0.7910** | **99.02%** | 0.4117 | 5.01s |
-| MLP | Neural Network | **0.7952** ⭐ | 72.70% | 84.16% | 0.7935 | 99.11% | 0.4238 | 108.25s |
+| Random Forest | Ensemble | 0.7856 | 73.00% | 84.75% | 0.7869 | 99.01% | 0.4153 | 43.84s |
+| **HistGradientBoosting** | Boosting | 0.7908 | 73.09% | **84.88%** | **0.7910** | **99.02%** | 0.4117 | 5.68s |
+| MLP | Neural Network | **0.7952** ⭐ | 72.70% | 84.16% | 0.7935 | 99.11% | 0.4238 | 107.83s |
 
 ⭐ MLP has the single highest CV Macro F1, but **HistGradientBoosting was selected**
 for tuning and deployment: it is essentially tied with MLP on held-out student-test
 metrics (higher Top-1, 84.88% vs 84.16%; MLP is marginally higher on Macro F1,
 0.7910 vs 0.7935, and post-repair continuity, 99.02% vs 99.11%) while training
-~21.6x faster, which is what makes a 30-trial Bayesian search practical.
+~19x faster, which is what makes a 30-trial Bayesian search practical.
 Note the Route Continuity column is measured after the connectivity-repair
 stage, which dominates it: all five models land within 0.2 points of each other. See the report for the full
 per-model rationale.
@@ -215,17 +216,23 @@ python3 model_training/calibrate_model.py   # calibration experiment
 python3 hmm_viterbi/viterbi.py --base_dir "Student folder/student_test" \
   --model_path results/best_tuned_model.joblib --n_trips 10
 
-# 5. Diagnostic plots + production Folium maps
+# 5. Diagnostic plots, EDA figures and Folium maps
 python3 model_evaluation/generate_diagnostic_plots.py
+python3 model_evaluation/analyze_direction_errors.py   # why Top-1 varies while continuity stays high
+python3 visualisations/generate_eda_figures.py
 python3 visualisations/generate_production_artifacts.py
 
-# 6. Technical report PDF (reads results/*.csv and results/*.json directly)
-python3 report/generate_report_pdf.py
+# 6. Rehearsal: call every trip through a running API and print the scorecards
+python3 deployment/rehearsal_all_trips.py --api http://localhost:8000 --out results/evaluator_predemo_run.json
+
+# 7. Technical report PDF (built from report/TECHNICAL_REPORT.md; figures come from the steps above)
+python3 report/build_report.py   # needs pandoc, Google Chrome and `pip install playwright`
 ```
 
 ---
 
 ## 6. Academic Integrity & Data Hygiene
 * **Zero Cross-Trip Leakage**: All validation is conducted under `GroupKFold` strictly grouped by `trip_id`.
-* **Private Ground Truth**: Reference `.route` files remain strictly server-side on Laptop 1; the evaluator client receives only predicted routes and calculated performance scorecards.
+* **Private Ground Truth**: Reference `.route` files are read only server-side on Laptop 1. For `evaluator_test` trips the API returns no reference geometry, only the predicted route, raw GPS and the computed scorecards. `evaluator_test` is final-evaluation data: it was never used for training, feature selection, hyperparameter or threshold choice, or model selection.
+* **Laptop 2 data**: `Student folder/` is not in git. Copy `Student folder/evaluator_test/` (the `.track`, `.nodes` and `.arcs` files; the `.route` files are not needed on Laptop 2) to the same relative path in the repo on Laptop 2 so the UI can draw the road network and GPS.
 * **Independent Implementation**: All algorithms, network models, feature formulations, and API endpoints are independently developed.

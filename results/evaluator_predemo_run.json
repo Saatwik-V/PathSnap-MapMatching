@@ -1,0 +1,122 @@
+[
+  {
+    "trip_id": "00000015",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.6236,
+      "route_continuity": 100.0,
+      "macro_f1": 0.5315,
+      "precision": 0.3629,
+      "recall": 0.9926,
+      "inference_latency_ms": 2372.45
+    }
+  },
+  {
+    "trip_id": "00000017",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.9183,
+      "route_continuity": 100.0,
+      "macro_f1": 0.7645,
+      "precision": 0.8549,
+      "recall": 0.6913,
+      "inference_latency_ms": 1264.69
+    }
+  },
+  {
+    "trip_id": "00000023",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.738,
+      "route_continuity": 99.3,
+      "macro_f1": 0.5824,
+      "precision": 0.4309,
+      "recall": 0.8983,
+      "inference_latency_ms": 266.62
+    }
+  },
+  {
+    "trip_id": "00000030",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.818,
+      "route_continuity": 99.15,
+      "macro_f1": 0.6713,
+      "precision": 0.8109,
+      "recall": 0.5727,
+      "inference_latency_ms": 508.04
+    }
+  },
+  {
+    "trip_id": "00000049",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.9394,
+      "route_continuity": 98.44,
+      "macro_f1": 0.8264,
+      "precision": 0.8009,
+      "recall": 0.8537,
+      "inference_latency_ms": 1105.6
+    }
+  },
+  {
+    "trip_id": "00000059",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.9176,
+      "route_continuity": 99.62,
+      "macro_f1": 0.7397,
+      "precision": 0.8534,
+      "recall": 0.6527,
+      "inference_latency_ms": 606.58
+    }
+  },
+  {
+    "trip_id": "00000067",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.9498,
+      "route_continuity": 99.45,
+      "macro_f1": 0.8764,
+      "precision": 0.8125,
+      "recall": 0.9512,
+      "inference_latency_ms": 278.38
+    }
+  },
+  {
+    "trip_id": "00000073",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.9519,
+      "route_continuity": 100.0,
+      "macro_f1": 0.8577,
+      "precision": 0.8506,
+      "recall": 0.865,
+      "inference_latency_ms": 567.16
+    }
+  },
+  {
+    "trip_id": "00000087",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.8821,
+      "route_continuity": 95.51,
+      "macro_f1": 0.7942,
+      "precision": 0.8087,
+      "recall": 0.7802,
+      "inference_latency_ms": 1404.0
+    }
+  },
+  {
+    "trip_id": "00000094",
+    "status": 200,
+    "metrics": {
+      "top1_accuracy": 0.8932,
+      "route_continuity": 100.0,
+      "macro_f1": 0.7869,
+      "precision": 0.7596,
+      "recall": 0.8162,
+      "inference_latency_ms": 1037.24
+    }
+  }
+]

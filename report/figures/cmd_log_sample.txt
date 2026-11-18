@@ -1,0 +1,27 @@
+================================================================================
+[2026-11-18 16:07:51] [EVALUATION REQUEST] POST /predict/00000007
+[2026-11-18 16:07:51] Client IP: 127.0.0.1 | Trip ID: 00000007
+[2026-11-18 16:07:51] Data Ingestion: Loaded 1,354 GPS points | 2,061 nodes | 4,369 arcs | 123 ground-truth arcs
+[2026-11-18 16:07:51] Sequential Decoding: Running HMM Viterbi road network snapping...
+[2026-11-18 16:07:51] Server-Side Ground-Truth Evaluation Results:
+    ├── Observation Top-1 Accuracy : 93.87%
+    ├── Route Continuity %         : 99.16%
+    ├── Macro F1-Score             : 0.9317
+    ├── Sequential Decode Time     : 352.75 ms
+    └── Total Inference Latency    : 392.40 ms
+[2026-11-18 16:07:51] Response Status: 200 OK | Predicted 239 continuous arcs
+================================================================================
+
+================================================================================
+[2026-11-18 16:08:01] [EVALUATION REQUEST] POST /predict/00000077
+[2026-11-18 16:08:01] Client IP: 127.0.0.1 | Trip ID: 00000077
+[2026-11-18 16:08:01] Data Ingestion: Loaded 3,911 GPS points | 4,424 nodes | 9,622 arcs | 268 ground-truth arcs
+[2026-11-18 16:08:01] Sequential Decoding: Running HMM Viterbi road network snapping...
+[2026-11-18 16:08:01] Server-Side Ground-Truth Evaluation Results:
+    ├── Observation Top-1 Accuracy : 76.30%
+    ├── Route Continuity %         : 99.95%
+    ├── Macro F1-Score             : 0.7500
+    ├── Sequential Decode Time     : 1029.62 ms
+    └── Total Inference Latency    : 1109.48 ms
+[2026-11-18 16:08:01] Response Status: 200 OK | Predicted 1981 continuous arcs
+================================================================================
