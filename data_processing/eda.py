@@ -263,20 +263,10 @@ def run_eda():
     # ============================================================
     # FIGURE 3: Geographic Region Clustering (geographic_regions.png)
     # ============================================================
-    fig, ax = plt.subplots(figsize=(10, 5.5), dpi=300)
-    region_counts = df_stats['region'].value_counts()
-    bars = ax.barh(region_counts.index, region_counts.values, color='#34495e', edgecolor='black', alpha=0.85)
-    for bar in bars:
-        w = bar.get_width()
-        ax.text(w + 0.8, bar.get_y() + bar.get_height()/2, f'{int(w)} ({w/len(df_stats):.1%})',
-                va='center', ha='left', fontsize=10, fontweight='bold', color='#2c3e50')
-    ax.set_xlim(0, max(region_counts.values) + 8)
-    ax.set_title('Geographic Dispersion of Training Trips (Requires Dynamic Local Projections)', fontsize=12, fontweight='bold', pad=10)
-    ax.set_xlabel('Number of Trips', fontsize=11)
-    plt.tight_layout()
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from visualisations.generate_eda_figures import plot_geographic_regions
     plot3_path = os.path.join(output_plot_dir, "geographic_regions.png")
-    plt.savefig(plot3_path, dpi=300)
-    plt.close()
+    plot_geographic_regions(df_stats, plot3_path)
     print(f"[Artifact Generated] Supplementary Plot 3 saved to: {plot3_path}")
 
     # ============================================================

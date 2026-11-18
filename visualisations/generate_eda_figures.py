@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from visualisations.folium_map import build_trip_map
 
+from data_processing.eda import classify_region
+
 BASE = "Student folder/train"
 TRIP = "00000061"
 
@@ -67,6 +69,57 @@ def plot_eda(trip=TRIP, out="results/plots/eda_trip_%s_network.png"):
     print("Saved:", path)
 
 
+NAMED_REGIONS = ["Russia / Volga-Urals", "Germany / Central Europe", "North America", "Poland / Eastern Europe", "Japan"]
+REGION_COLORS = {"Russia / Volga-Urals": "#d62728", "Germany / Central Europe": "#1f77b4", "North America": "#2ca02c",
+                 "Poland / Eastern Europe": "#9467bd", "Japan": "#ff7f0e", "Other locations": "#7f7f7f"}
+
+
+def plot_geographic_regions(df_stats, out="results/plots/geographic_regions.png"):
+    """
+    df_stats needs columns: mean_lon, mean_lat, region (one row per training trip).
+    Left: trips per named region, with the long tail of 1-2 trip locations collapsed into one bar.
+    Right: the actual trip centroids, so the geographic spread is visible rather than listed.
+    """
+    df = df_stats.copy()
+    df["group"] = df["region"].where(df["region"].isin(NAMED_REGIONS), "Other locations")
+    n_other_sites = df.loc[df["group"] == "Other locations", "region"].nunique()
+    counts = df["group"].value_counts()
+    order = [g for g in NAMED_REGIONS if g in counts.index] + (["Other locations"] if "Other locations" in counts.index else [])
+    labels = [f"Other locations\n({n_other_sites} distinct sites, 1-2 trips each)" if g == "Other locations" else g for g in order]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.4), gridspec_kw={"width_ratios": [1, 1.25]}, constrained_layout=True)
+    y = np.arange(len(order))[::-1]
+    ax1.barh(y, [counts[g] for g in order], color=[REGION_COLORS[g] for g in order], edgecolor="black", alpha=0.9)
+    for yi, g in zip(y, order):
+        ax1.text(counts[g] + 0.6, yi, f"{counts[g]} ({counts[g] / len(df):.0%})", va="center", fontweight="bold", fontsize=10)
+    ax1.set_yticks(y); ax1.set_yticklabels(labels, fontsize=10)
+    ax1.set_xlim(0, counts.max() + 8); ax1.set_xlabel("Number of training trips")
+    ax1.set_title(f"(a) Trips per region ({len(df)} training trips)", fontweight="bold", fontsize=11)
+
+    for g in order[::-1]:
+        sub = df[df["group"] == g]
+        ax2.scatter(sub["mean_lon"], sub["mean_lat"], s=55 if g != "Other locations" else 40, color=REGION_COLORS[g],
+                    edgecolor="black", linewidth=0.5, alpha=0.85, label=f"{g} ({len(sub)})", zorder=3)
+    ax2.set_xlim(-130, 150); ax2.set_ylim(-45, 75)
+    ax2.set_xlabel("Longitude (trip centroid)"); ax2.set_ylabel("Latitude (trip centroid)")
+    ax2.grid(True, alpha=0.3); ax2.legend(loc="lower left", fontsize=8, framealpha=0.95)
+    ax2.set_title("(b) Trip centroids: trips span several continents", fontweight="bold", fontsize=11)
+    fig.suptitle("Geographic dispersion of the training trips: why each trip needs its own local projection", fontweight="bold")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    plt.savefig(out, dpi=200)
+    plt.close()
+    print("Saved:", out)
+
+
+def compute_centroids(base=BASE):
+    rows = []
+    for t in sorted(os.listdir(base)):
+        tr = pd.read_csv(os.path.join(base, t, f"{t}.track"), sep=r"\s+", header=None, names=["lon", "lat", "ts"])
+        lon, lat = float(tr.lon.mean()), float(tr.lat.mean())
+        rows.append({"trip_id": t, "mean_lon": lon, "mean_lat": lat, "region": classify_region(lon, lat)})
+    return pd.DataFrame(rows)
+
+
 def folium_eda(trip=TRIP):
     track, nodes, arcs, route = _load(trip)
     m = build_trip_map(track, nodes, arcs, route, [], trip)
@@ -76,5 +129,6 @@ def folium_eda(trip=TRIP):
 
 
 if __name__ == "__main__":
+    plot_geographic_regions(compute_centroids())
     plot_eda()
     folium_eda()

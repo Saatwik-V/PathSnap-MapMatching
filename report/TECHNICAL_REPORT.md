@@ -61,6 +61,7 @@ spread across the final-evaluation trips honestly.
 ### 2.1 Dataset Architecture and Partition Structure
 The dataset is organised by trip, each with four raw files, and split into three
 strictly isolated partitions to prevent leakage:
+
 - **Training Partition (80 trips):** used for EDA, candidate generation, feature
   engineering, 5-fold group-aware cross-validation, and Bayesian hyperparameter
   optimisation.
@@ -74,6 +75,7 @@ strictly isolated partitions to prevent leakage:
   feature. Its ground truth stays server-side and is never returned to the UI.
 
 Each trip directory `NNNNNNNN/` contains:
+
 1. `NNNNNNNN.track` — whitespace-separated GPS observations, no header
    (`lon, lat, timestamp`).
 2. `NNNNNNNN.nodes` — road-network junction nodes (`lon, lat`), 0-based row
@@ -101,6 +103,7 @@ the projection is computed per trip, not globally.
 
 ### 2.3 Exploratory Data Analysis — Empirical Observations
 Across all 80 training trips (208,417 raw GPS observations):
+
 - **Missing values:** exactly 0 missing/invalid coordinates across every file.
 - **Sampling interval (Δt):** nominal 1 Hz; 96.50% of steps are exactly 1.0s
   apart. Mean Δt is 2.18s — inflated by rare severe dropouts (max observed gap
@@ -139,9 +142,9 @@ distance grow with the elapsed time (§5).
 
 *Figure 2. Number of GPS points per trip (training partition).*
 
-![Geographic regions](../results/plots/geographic_regions.png){width=88%}
+![Geographic regions](../results/plots/geographic_regions.png){width=100%}
 
-*Figure 3. Trip centroids by region (training partition); the spread across the globe is why a per-trip local projection is used (§2.2).*
+*Figure 3. Geographic spread of the 80 training trips (training partition). (a) Trips per named region, with the 38 single- or two-trip sites grouped as "Other locations". (b) Each trip's centroid: the trips span several continents, which is why a per-trip local projection is used (§2.2).*
 
 ![GPS trajectory and road network](../results/plots/eda_trip_00000061_network.png){width=100%}
 
@@ -785,19 +788,24 @@ After all modelling, tuning and decoder choices were frozen, the complete system
 
 Mean Top-1 (86.3%) is close to, and slightly below, the student-test mean
 (88.9%), so the system generalises; continuity stays at 99.1%.
-The spread across trips is real, and two trips fail for different reasons. Trip `00000015` scores
+The spread across trips is real, and two trips fail for different reasons.
+
+**Trip `00000015`** scores
 62.4% Top-1 yet 100% continuity. It is the largest trip (6,854 points), reference-arc recall is
 99.3% but predicted-set precision is only 36.3%, and
 80% of its 2,580 wrong points are the opposite-direction arc of a route arc
 (92.5% Top-1 if direction is ignored). Those errors are short bursts (median run
 2 points; 16% of wrong points in runs of 5 or more), i.e. point-by-point flips
-between an arc and its reverse twin, the same pattern as student-test trip `00000077`. Trip `00000023` (458 points)
+between an arc and its reverse twin, the same pattern as student-test trip `00000077`.
+
+**Trip `00000023`** (458 points)
 is different: only 2% of its errors are direction flips, its errors are sustained
 (median run 4 points; 83% of wrong points in runs of 5 or more), and
 18.3% of its points have none of the 10 candidate arcs on the reference route (1-4.5% on the other
 evaluator trips), so no decoder could be right there: the GPS lies far from the reference route's arcs, through noise,
 drift or an imperfect reference route. The error rate in its first 60 points is 52% versus
 22% afterwards, so start-up drift contributes but does not explain the whole gap.
+
 Route-level F1 is lower than the candidate-classification Macro F1 of §3 because it is
 computed on sets of arcs for a whole trip, a stricter and differently defined quantity.
 
