@@ -199,7 +199,7 @@ def predict_and_evaluate(trip_id: str, request: Request):
         decode_time_ms = (time.perf_counter() - decode_start) * 1000.0
 
         # 4. Server-Side Ground-Truth Evaluation
-        continuity_pct = compute_route_continuity(point_pred_arcs, arcs_df)
+        continuity_pct = compute_route_continuity(seq_pred_arcs, arcs_df)
         gt_metrics = compute_ground_truth_metrics(point_pred_arcs, gt_route_arcs, track_df, nodes_df, arcs_df)
 
         total_latency_ms = (time.perf_counter() - start_time) * 1000.0

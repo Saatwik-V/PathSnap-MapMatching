@@ -25,3 +25,7 @@ PathSnap_student_materials/
 # Large regenerable feature datasets (exceeds GitHub's 100MB hard limit; regenerate via
 # feature_engineering/extract_features.py build_dataset() -- see README)
 results/train_features.csv
+
+# Calibrated model experiment output (88MB, not adopted as production; regenerate via model_training/calibrate_model.py)
+results/best_calibrated_model.joblib
+results/_tmp_*.joblib

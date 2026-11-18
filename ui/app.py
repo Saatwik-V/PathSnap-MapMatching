@@ -45,9 +45,13 @@ except Exception:
     st.sidebar.error("❌ Cannot reach Laptop 1 API. Ensure uvicorn is running.")
 
 # Fetch Trips
+# Offline placeholder shown only before the API connects -- the real list below always
+# comes from GET /trips. These are the 10 evaluator_test trip IDs (final-evaluation
+# partition), not student_test (our own dev-time partition) -- evaluator_test is what
+# the live demo actually serves from.
 available_trips = [
-    "00000000", "00000007", "00000009", "00000040", "00000052",
-    "00000056", "00000065", "00000076", "00000077", "00000091"
+    "00000015", "00000017", "00000023", "00000030", "00000049",
+    "00000059", "00000067", "00000073", "00000087", "00000094"
 ]
 if is_connected:
     try:

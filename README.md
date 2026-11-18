@@ -14,7 +14,7 @@ Vehicle GPS units in urban environments suffer from severe multipath reflections
 2. **Kinematic & Geometric Feature Extraction**: Computes a 12-dimensional feature vector per candidate (distance, projection ratios, heading angles, directional cosines, velocity, endpoint symmetry, and graph topological ranks).
 3. **Supervised Binary Classification**: Trains across 5 distinct algorithm families with strict `GroupKFold(groups=trip_id)` cross-validation to eliminate spatial data leakage.
 4. **Bayesian Hyperparameter Optimization**: Tunes the champion model via **Optuna** (TPE sampler, 30 trials) maximizing generalization on held-out partitions.
-5. **Sequential Route Reconstruction (HMM + Viterbi)**: Decodes the globally optimal continuous route path over a directed road graph (`NetworkX`), improving Route Continuity from 76.8% to **92.4%**.
+5. **Sequential Route Reconstruction (HMM + Viterbi)**: Decodes the globally optimal continuous route path over a directed road graph (`NetworkX`), followed by a deterministic connectivity-repair step, improving Route Continuity from 76.8% (classifier-only) to 90.4% (HMM) to **99.0%** (HMM + repair).
 6. **Distributed 2-Laptop Deployment**: Deployed across a local area network using a **FastAPI** model server (Laptop 1) and a **Streamlit + Folium** interactive evaluator client (Laptop 2).
 
 ---
@@ -81,8 +81,10 @@ PathSnap-MapMatching/
 │   ├── best_model.joblib           # Untuned champion model weights (MLP, highest CV Macro F1)
 │   ├── best_tuned_model.joblib     # Optuna-tuned production model (HistGradientBoosting) -- used by the API
 │   ├── five_model_comparison.csv   # Official 5-model benchmark: CV + held-out student-test + route continuity
-│   ├── tuned_vs_untuned.csv        # Optuna tuning improvement table (73.09% -> 84.99%)
-│   ├── hmm_vs_classifier_studenttest.csv # Per-trip HMM continuity comparison (76.8% -> 92.4%)
+│   ├── tuned_vs_untuned.csv        # Fair untuned-vs-tuned table (both on student-test)
+│   ├── hmm_vs_classifier_studenttest.csv # Per-trip continuity: classifier-only -> HMM -> HMM+repair (76.8% -> 90.4% -> 99.0%)
+│   ├── calibration_comparison.csv  # Untuned / tuned / calibrated, all on student-test
+│   ├── hmm_param_sweep.csv         # HMM sigma x beta grid results
 │   ├── optuna_trials.csv           # 30-trial optimization audit log
 │   ├── optuna_best_params.json     # Serialized winning hyperparameters
 │   ├── data_quality_notes.md       # Comprehensive multi-region and dropout audit documentation
@@ -142,15 +144,23 @@ five models (strongest generalisation evidence). See the report for the full
 per-model rationale.
 
 ### B. Bayesian Hyperparameter Optimization (Optuna)
-*Tuning HistGradientBoosting over 30 trials with TPESampler, `GroupKFold(n_splits=3)`:*
-* **Held-out Student-Test Top-1 Accuracy**: 73.09% → **84.99%** (+11.90 points).
-* **CV Macro F1**: 0.7908 → 0.7970.
+*Tuning HistGradientBoosting over 30 trials with TPESampler, `GroupKFold(n_splits=3)`; untuned and tuned are both scored on the same held-out student-test partition:*
+* **CV Macro F1**: 0.7908 -> 0.7970 (+0.006).
+* **Held-out Student-Test Top-1 Accuracy**: 84.88% -> 84.99% (+0.11 points) -- a small, honest gain; the default configuration was already near this feature set's ceiling. (An earlier draft reported "73.09% -> 84.99%" by mixing a cross-validation number with a student-test number; that was wrong and has been corrected.)
 * **Best Hyperparameters**: `learning_rate=0.0894, max_depth=13, max_leaf_nodes=84, l2_regularization=0.0232, min_samples_leaf=116`.
 
-### C. HMM & Viterbi Sequential Route Reconstruction
-*Tested across all 10 held-out student-test trips with the tuned model:*
-* **Mean pointwise accuracy**: 86.32% → 88.62%.
-* **Mean Route Continuity %**: 76.82% (classifier-only) → **92.41%** (classifier + HMM), reaching **98.23%** on trip `00000007`. Improved continuity on all 10 trips.
+### C. Probability Calibration (experiment, not adopted)
+*Isotonic calibration fit with GroupKFold-by-trip splits (`model_training/calibrate_model.py`, `results/calibration_comparison.csv`):*
+* Student-test log loss 0.4719 -> 0.4539 and Brier 0.1411 -> 0.1399, but Top-1, pointwise accuracy and route continuity do not improve, and the model grows to ~88MB. The tuned, uncalibrated model stays in production.
+
+### D. HMM & Viterbi Sequential Route Reconstruction
+*Tested across all 10 held-out student-test trips with the tuned model, HMM `sigma=25, beta=50` (chosen by a 4x5 grid, `results/hmm_param_sweep.csv`; the surface is flat, so these are a minor lever):*
+* **Mean pointwise accuracy**: 86.32% (classifier-only) -> **88.86%** (HMM); improved on all 10 trips.
+* **Mean Route Continuity %**: 76.82% (classifier-only) -> 90.44% (HMM/Viterbi alone) -> **99.01%** (after deterministic connectivity repair; per-trip range 96.97%-100%).
+* **Connectivity repair**: after Viterbi decoding, consecutive predicted arcs that are not graph-adjacent are bridged with the real shortest-path arcs, only when that path lies within the same 400m radius the transition model already uses. 1,639 gaps were bridged and 64 genuine network gaps were left untouched. Repair never changes the per-GPS-point assignment, so Top-1 / pointwise accuracy / Macro F1 are unaffected by it; the HMM alone did not reach the 95% continuity target, and the repair stage is what does.
+
+### E. Dataset Partition Policy
+`Student folder/` is gitignored and never committed. `train` (80 trips) is used for training; `student_test` (10 trips) for all development-stage comparison, tuning-table scoring and HMM parameter selection; `evaluator_test` (10 trips) is **final-evaluation only** -- it is never used for training, feature selection, hyperparameter or threshold choice, and no evaluator_test accuracy has been used for any decision. The API serves `evaluator_test` trips when that folder is present on Laptop 1 (falling back to `student_test` otherwise), and ground-truth `.route` files are read server-side only.
 
 ---
 
@@ -197,6 +207,8 @@ python3 model_training/train_5_models.py
 python3 hyperparameter_optimisation/tune_optuna.py --family histgb --trials 30 --splits 3
 
 # 4. HMM/Viterbi evaluation on the student-test partition
+python3 hmm_viterbi/tune_hmm_params.py   # sigma/beta sweep (student_test only)
+python3 model_training/calibrate_model.py   # calibration experiment
 python3 hmm_viterbi/viterbi.py --base_dir "Student folder/student_test" \
   --model_path results/best_tuned_model.joblib --n_trips 10
 

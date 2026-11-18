@@ -30,8 +30,8 @@ EARTH_RADIUS = 6371000.0
 
 def find_dataset_root() -> str:
     """
-    Locates the dataset root directory containing 'train' and 'student_test'
-    or trip folders.
+    Locates the dataset root directory containing 'train', 'student_test', and/or
+    'evaluator_test' trip folders.
     """
     candidates = [
         os.environ.get("PATHSNAP_DATA_DIR", ""),
@@ -43,9 +43,9 @@ def find_dataset_root() -> str:
     ]
     for path in candidates:
         if path and os.path.isdir(path):
-            if os.path.isdir(os.path.join(path, "student_test")) or os.path.isdir(os.path.join(path, "train")):
+            if any(os.path.isdir(os.path.join(path, p)) for p in ("evaluator_test", "student_test", "train")):
                 return path
-            if "student_test" in path:
+            if "student_test" in path or "evaluator_test" in path:
                 return path
 
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -53,12 +53,19 @@ def find_dataset_root() -> str:
 
 def list_available_trips(data_root: Optional[str] = None) -> List[str]:
     """
-    Returns sorted list of 10-digit test trip IDs from student_test or train.
+    Returns sorted list of 10-digit test trip IDs.
+
+    'evaluator_test' is checked first: per the official Dataset Exploration / Assessment
+    policy docs, it is the final-evaluation-only partition and -- once present on Laptop 1
+    for the live demo -- is what the API and UI must actually serve. 'student_test' (our
+    own development-stage partition, used throughout this repo's offline experiments) is
+    the fallback so local dev/testing keeps working when 'evaluator_test' isn't deployed.
     """
     if data_root is None:
         data_root = find_dataset_root()
 
     search_dirs = [
+        os.path.join(data_root, "evaluator_test"),
         os.path.join(data_root, "student_test"),
         data_root,
         os.path.join(data_root, "train")
@@ -74,22 +81,27 @@ def list_available_trips(data_root: Optional[str] = None) -> List[str]:
                 break
 
     if not trips:
-        trips = ["00000000", "00000007", "00000009", "00000040", "00000052",
-                 "00000056", "00000065", "00000076", "00000077", "00000091"]
+        # Last-resort placeholder if no trip directories are found at all on disk --
+        # the evaluator_test IDs, since that is the partition the live demo serves from.
+        trips = ["00000015", "00000017", "00000023", "00000030", "00000049",
+                 "00000059", "00000067", "00000073", "00000087", "00000094"]
     return trips
 
 
 def find_trip_folder(trip_id: str, data_root: Optional[str] = None) -> str:
     """
     Finds the directory containing the trip files for a given trip_id.
+    'evaluator_test' is checked first for the same reason as in list_available_trips.
     """
     if data_root is None:
         data_root = find_dataset_root()
 
     candidates = [
+        os.path.join(data_root, "evaluator_test", trip_id),
         os.path.join(data_root, "student_test", trip_id),
         os.path.join(data_root, trip_id),
         os.path.join(data_root, "train", trip_id),
+        r"C:\Users\Vikas\Downloads\Student folder\Student folder\evaluator_test\"" + trip_id,
         r"C:\Users\Vikas\Downloads\Student folder\Student folder\student_test\"" + trip_id,
         r"C:\Users\Vikas\Downloads\Student folder\Student folder\train\"" + trip_id,
     ]
@@ -261,8 +273,11 @@ def reconstruct_route_pipeline(
     # inside a plain list, and the underlying candidate/arc ids are numpy ints throughout
     # the hmm_viterbi / pandas pipeline.
     point_predictions = [int(a) for a in result["predicted_arc_ids"]]
+    # Connected route = per-timestep decode with deterministic gap-repair bridge arcs
+    # spliced in (hmm_viterbi.repair_route_gaps); used for continuity and map drawing.
+    connected = [int(a) for a in result.get("repaired_route_arc_ids", point_predictions)]
     sequence_predictions = []
-    for arc in point_predictions:
+    for arc in connected:
         if not sequence_predictions or arc != sequence_predictions[-1]:
             sequence_predictions.append(arc)
 

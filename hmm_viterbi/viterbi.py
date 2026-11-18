@@ -66,6 +66,11 @@ class GraphDistanceIndex:
     every (arc_i, arc_j) pair on every Viterbi call. This is what makes it practical
     to grid-search / re-decode many (sigma, beta) values over the same trip: the
     expensive graph search runs exactly once per trip, independent of those parameters.
+
+    Caches both distances AND node paths from a single `single_source_dijkstra` call
+    (instead of a separate path-only query), so the gap-repair step below (which needs
+    the actual path, not just its length) reuses the same warm cache the transition
+    probability already paid for -- no extra graph search per repaired gap.
     """
 
     def __init__(self, G: nx.DiGraph, cutoff: float = GRAPH_SEARCH_CUTOFF_M):
@@ -73,14 +78,15 @@ class GraphDistanceIndex:
         self.cutoff = cutoff
         self._cache = {}
 
-    def _dist_map_from(self, source_node: int) -> dict:
+    def _maps_from(self, source_node: int):
         if source_node not in self._cache:
             try:
-                self._cache[source_node] = nx.single_source_dijkstra_path_length(
+                lengths, paths = nx.single_source_dijkstra(
                     self.G, source_node, cutoff=self.cutoff, weight="weight"
                 )
             except nx.NodeNotFound:
-                self._cache[source_node] = {}
+                lengths, paths = {}, {}
+            self._cache[source_node] = (lengths, paths)
         return self._cache[source_node]
 
     def distance(self, arc_i: int, arc_j: int, arc_endpoints: dict) -> float:
@@ -89,7 +95,17 @@ class GraphDistanceIndex:
             return 0.0
         _, v_i = arc_endpoints[arc_i]
         u_j, _ = arc_endpoints[arc_j]
-        return self._dist_map_from(v_i).get(u_j, np.inf)
+        lengths, _ = self._maps_from(v_i)
+        return lengths.get(u_j, np.inf)
+
+    def node_path(self, arc_i: int, arc_j: int, arc_endpoints: dict):
+        """Node-id path from the end of arc_i to the start of arc_j, or None if beyond cutoff."""
+        if arc_i == arc_j:
+            return []
+        _, v_i = arc_endpoints[arc_i]
+        u_j, _ = arc_endpoints[arc_j]
+        _, paths = self._maps_from(v_i)
+        return paths.get(u_j)
 
 
 def load_classifier(model_path: str):
@@ -124,6 +140,60 @@ def route_continuity_pct(arc_sequence: list, arc_endpoints: dict) -> float:
         if v_a == u_b:
             connected += 1
     return 100.0 * connected / total if total else 100.0
+
+
+def repair_route_gaps(arc_sequence: list, G: nx.DiGraph, arc_endpoints: dict, dist_index: "GraphDistanceIndex") -> dict:
+    """
+    Deterministic post-Viterbi connectivity repair.
+
+    Why this exists: the Viterbi decode is a *probabilistic* trade-off between emission
+    (how well a candidate arc fits the GPS point) and transition (how plausible the jump
+    to it is). On a minority of timesteps a disconnected candidate can still win if its
+    emission score is high enough to outweigh the transition penalty -- that's a real
+    Viterbi output, not a bug, but it leaves a jump in the predicted sequence that doesn't
+    correspond to a drivable path.
+
+    This step does NOT change the classifier or the Viterbi scores at all -- it only
+    inspects the *already-decoded* sequence for consecutive arcs that are not directly
+    graph-adjacent (to_node != from_node) and, if there is a path between them within the
+    same cutoff radius the transition probability itself is bounded by (400m,
+    GRAPH_SEARCH_CUTOFF_M), splices the actual shortest-path arcs into the gap. Gaps
+    beyond that radius are left untouched and counted as genuine network disconnections --
+    we never fabricate connectivity the road graph doesn't support.
+    """
+    if len(arc_sequence) < 2:
+        return {"sequence": list(arc_sequence), "n_repaired": 0, "n_unrepairable": 0}
+
+    repaired = [arc_sequence[0]]
+    n_repaired = 0
+    n_unrepairable = 0
+
+    for a, b in zip(arc_sequence[:-1], arc_sequence[1:]):
+        if a == b:
+            continue
+        _, v_a = arc_endpoints[a]
+        u_b, _ = arc_endpoints[b]
+        if v_a == u_b:
+            repaired.append(b)
+            continue
+
+        node_path = dist_index.node_path(a, b, arc_endpoints)
+        if not node_path:
+            # No path within the cutoff radius -- a genuine disconnection, left as-is.
+            repaired.append(b)
+            n_unrepairable += 1
+            continue
+
+        bridge_arcs = []
+        for u, v in zip(node_path[:-1], node_path[1:]):
+            edge_data = G.get_edge_data(u, v)
+            if edge_data is not None and "arc_id" in edge_data:
+                bridge_arcs.append(edge_data["arc_id"])
+        repaired.extend(bridge_arcs)
+        repaired.append(b)
+        n_repaired += 1
+
+    return {"sequence": repaired, "n_repaired": n_repaired, "n_unrepairable": n_unrepairable}
 
 
 def prepare_trip_context(
@@ -179,20 +249,28 @@ def prepare_trip_context(
         "gc_dist": gc_dist,
         "arc_endpoints": arc_endpoints,
         "dist_index": dist_index,
+        "G": G,
         "route_arcs": route_arcs,
         "model_name": model_name,
     }
 
 
-def decode_viterbi(ctx: dict, sigma: float = 10.0, beta: float = 100.0) -> dict:
+def decode_viterbi(ctx: dict, sigma: float = 25.0, beta: float = 50.0, repair_gaps: bool = True) -> dict:
     """
     Cheap step: given a precomputed trip context (see prepare_trip_context), decodes the
     HMM with the given (sigma, beta) and returns the predicted sequence plus metrics,
     compared against the classifier-only (no-HMM) baseline.
+
+    When repair_gaps=True (the production default), a deterministic connectivity repair
+    (see repair_route_gaps) is applied to the raw Viterbi output before metrics are
+    computed. Both pre-repair and post-repair continuity/accuracy are returned so the
+    incremental contribution of each stage (classifier-only -> HMM -> HMM+repair) stays
+    separately measurable and explainable, rather than collapsing into one number.
     """
     candidates_per_t = ctx["candidates_per_t"]
     arc_endpoints = ctx["arc_endpoints"]
     dist_index: GraphDistanceIndex = ctx["dist_index"]
+    G = ctx["G"]
     gc_dist = ctx["gc_dist"]
     route_arcs = ctx["route_arcs"]
     T = len(candidates_per_t)
@@ -239,6 +317,14 @@ def decode_viterbi(ctx: dict, sigma: float = 10.0, beta: float = 100.0) -> dict:
         hmm_seq.append(last_arc)
     hmm_seq.reverse()
 
+    # ---- Deterministic connectivity repair (see repair_route_gaps docstring) ----
+    if repair_gaps:
+        repair_result = repair_route_gaps(hmm_seq, G, arc_endpoints, dist_index)
+        final_seq = repair_result["sequence"]
+    else:
+        repair_result = {"n_repaired": 0, "n_unrepairable": 0}
+        final_seq = hmm_seq
+
     # ---- Metrics (weak reference label: predicted arc is a member of the route's arc set,
     #      consistent with the label_y convention used throughout candidate_gen / training) ----
     def pointwise_accuracy(seq):
@@ -251,12 +337,23 @@ def decode_viterbi(ctx: dict, sigma: float = 10.0, beta: float = 100.0) -> dict:
         "n_timesteps": T,
         "sigma": sigma,
         "beta": beta,
+        # Per-timestep decode (length T, one arc per GPS observation) -- the unit that
+        # pointwise accuracy / Top-1 / Macro F1 are defined over. Repair never changes it.
         "predicted_arc_ids": hmm_seq,
+        # Connected route: per-timestep decode plus spliced bridge arcs. Longer than T,
+        # so it is used for continuity and map drawing, never for per-observation metrics.
+        "repaired_route_arc_ids": final_seq,
         "classifier_only_arc_ids": classifier_only_seq,
         "pointwise_accuracy": pointwise_accuracy(hmm_seq),
         "classifier_only_pointwise_accuracy": pointwise_accuracy(classifier_only_seq),
-        "route_continuity_pct": route_continuity_pct(hmm_seq, arc_endpoints),
+        "route_continuity_pct": route_continuity_pct(final_seq, arc_endpoints),
         "classifier_only_route_continuity_pct": route_continuity_pct(classifier_only_seq, arc_endpoints),
+        # Pre-repair numbers isolate what the probabilistic HMM/Viterbi decode alone
+        # contributed, before the deterministic graph-repair stage on top of it.
+        "pre_repair_pointwise_accuracy": pointwise_accuracy(hmm_seq),
+        "pre_repair_route_continuity_pct": route_continuity_pct(hmm_seq, arc_endpoints),
+        "n_gaps_repaired": repair_result["n_repaired"],
+        "n_gaps_unrepairable": repair_result["n_unrepairable"],
         "model_name": ctx["model_name"],
     }
 
@@ -265,9 +362,10 @@ def reconstruct_route(
     trip_id: str,
     base_dir: str = "Student folder/train",
     model_path: str = "results/best_tuned_model.joblib",
-    sigma: float = 10.0,
-    beta: float = 100.0,
+    sigma: float = 25.0,
+    beta: float = 50.0,
     k_candidates: int = 10,
+    repair_gaps: bool = True,
 ) -> dict:
     """
     Convenience one-shot wrapper: prepares the trip context and decodes it once.
@@ -276,13 +374,13 @@ def reconstruct_route(
     ctx = prepare_trip_context(trip_id, base_dir=base_dir, model_path=model_path, k_candidates=k_candidates)
     if "error" in ctx:
         return ctx
-    return decode_viterbi(ctx, sigma=sigma, beta=beta)
+    return decode_viterbi(ctx, sigma=sigma, beta=beta, repair_gaps=repair_gaps)
 
 
-def evaluate_trips(trip_ids: list, base_dir: str, model_path: str) -> pd.DataFrame:
+def evaluate_trips(trip_ids: list, base_dir: str, model_path: str, sigma: float = 25.0, beta: float = 50.0) -> pd.DataFrame:
     rows = []
     for tid in trip_ids:
-        r = reconstruct_route(tid, base_dir=base_dir, model_path=model_path)
+        r = reconstruct_route(tid, base_dir=base_dir, model_path=model_path, sigma=sigma, beta=beta)
         if "error" in r:
             continue
         rows.append({
@@ -292,6 +390,9 @@ def evaluate_trips(trip_ids: list, base_dir: str, model_path: str) -> pd.DataFra
             "hmm_pointwise_acc": r["pointwise_accuracy"],
             "classifier_only_continuity_pct": r["classifier_only_route_continuity_pct"],
             "hmm_continuity_pct": r["route_continuity_pct"],
+            "pre_repair_hmm_continuity_pct": r["pre_repair_route_continuity_pct"],
+            "n_gaps_repaired": r["n_gaps_repaired"],
+            "n_gaps_unrepairable": r["n_gaps_unrepairable"],
         })
     return pd.DataFrame(rows)
 
@@ -309,6 +410,8 @@ if __name__ == "__main__":
     df = evaluate_trips(trips, args.base_dir, args.model_path)
     df.to_csv(args.output, index=False)
     print(df.to_string(index=False))
-    print(f"\nMean classifier-only continuity: {df['classifier_only_continuity_pct'].mean():.2f}%")
-    print(f"Mean HMM+Viterbi continuity:      {df['hmm_continuity_pct'].mean():.2f}%")
+    print(f"\nMean classifier-only continuity:        {df['classifier_only_continuity_pct'].mean():.2f}%")
+    print(f"Mean HMM+Viterbi continuity (pre-repair): {df['pre_repair_hmm_continuity_pct'].mean():.2f}%")
+    print(f"Mean HMM+Viterbi+repair continuity:       {df['hmm_continuity_pct'].mean():.2f}%")
+    print(f"Total gaps repaired / unrepairable:       {df['n_gaps_repaired'].sum()} / {df['n_gaps_unrepairable'].sum()}")
     print(f"\nSaved per-trip comparison to: {args.output}")

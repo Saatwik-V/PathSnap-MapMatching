@@ -83,13 +83,15 @@ def plot_hmm_continuity_gain(
     df = pd.read_csv(csv_path, dtype={"trip_id": str})
     df["trip_id"] = df["trip_id"].str.zfill(8)
     x = np.arange(len(df))
-    width = 0.38
+    width = 0.27
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.bar(x - width / 2, df["classifier_only_continuity_pct"], width, label="Classifier-Only", color="#9e9e9e", edgecolor="black")
-    ax.bar(x + width / 2, df["hmm_continuity_pct"], width, label="Classifier + HMM/Viterbi", color="#2ca02c", edgecolor="black")
+    ax.bar(x - width, df["classifier_only_continuity_pct"], width, label="Classifier-Only", color="#9e9e9e", edgecolor="black")
+    ax.bar(x, df["pre_repair_hmm_continuity_pct"], width, label="Classifier + HMM/Viterbi", color="#6baed6", edgecolor="black")
+    ax.bar(x + width, df["hmm_continuity_pct"], width, label="HMM/Viterbi + Connectivity Repair", color="#2ca02c", edgecolor="black")
 
     mean_base = df["classifier_only_continuity_pct"].mean()
+    mean_pre = df["pre_repair_hmm_continuity_pct"].mean()
     mean_hmm = df["hmm_continuity_pct"].mean()
     ax.axhline(mean_base, color="#555555", linestyle="--", linewidth=1, alpha=0.7)
     ax.axhline(mean_hmm, color="#1a7a1a", linestyle="--", linewidth=1, alpha=0.7)
@@ -99,7 +101,7 @@ def plot_hmm_continuity_gain(
     ax.set_ylabel("Route Continuity (%)")
     ax.set_ylim(0, 105)
     ax.set_title(
-        f"Route Continuity: Classifier-Only (mean {mean_base:.1f}%) vs Classifier+HMM (mean {mean_hmm:.1f}%)\n"
+        f"Route Continuity: Classifier-Only ({mean_base:.1f}%) vs HMM ({mean_pre:.1f}%) vs HMM+Repair ({mean_hmm:.1f}%)\n"
         f"10 Student-Test Trips",
         fontsize=11, fontweight="bold",
     )

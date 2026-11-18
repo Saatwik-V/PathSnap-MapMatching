@@ -165,19 +165,25 @@ All built from actual CSV/model outputs, 300 DPI:
   every click would have raised a `KeyError`. Made the UI accept either
   shape so this is no longer a live-demo blocker.
 
-## ⚠️ Outstanding integration risk (not fixed here — out of this task's scope)
+## Round 4 — Integration fix, accuracy improvements, evaluator_test plumbing
 
-`api/utils.py`'s `reconstruct_route_pipeline()` is a **separate, independent,
-hardcoded 6-feature** implementation of candidate generation + a simplified
-fixed-probability HMM. It does not import `data_processing/candidate_gen.py`,
-`feature_engineering/extract_features.py`, or `hmm_viterbi/viterbi.py` at
-all. Now that `results/best_model.joblib` / `results/best_tuned_model.joblib`
-expect **12** features, the line
-`feat = np.array([[perp_dist, t_clamped, heading_error, seg_len, dist_to_start, dist_to_end]])`
-will pass the wrong shape to `model.predict_proba`. This is wrapped in a
-silent `try/except Exception: model_prob = 1.0` fallback, so the API will
-**not crash** — it will silently stop using the trained ML model for every
-request and fall back to pure spatial probability. This needs to be fixed
-(ideally by having `api/utils.py` call `hmm_viterbi.viterbi.reconstruct_route`
-directly instead of maintaining a parallel implementation) before the next
-live demo.
+**Resolved:** the `api/utils.py` silent 6-feature fallback was removed; the API now delegates to
+`hmm_viterbi.viterbi.reconstruct_route` (verified over live HTTP).
+
+**Corrected:** the earlier "untuned 73.09% -> tuned 84.99% (+11.9pp)" claim mixed a 5-fold CV number
+with a student-test number. On a like-for-like student-test comparison, tuning gave +0.11pp Top-1
+(84.88% -> 84.99%) and a flat log loss. README/report/CSV/PDF were corrected.
+
+**Added:**
+- `hmm_viterbi/viterbi.py`: deterministic post-Viterbi connectivity repair (`repair_route_gaps`):
+  mean continuity 90.44% (HMM alone) -> 99.01%; 1,639 gaps bridged, 64 unrepairable (beyond the 400m
+  cutoff, left as-is). Per-point assignments are untouched, so accuracy metrics are unaffected.
+  A first version of this change computed pointwise accuracy over the longer repaired sequence
+  (bridge arcs counted as predictions) and dropped it to ~0.38-0.86; fixed by keeping
+  `predicted_arc_ids` per-timestep and exposing the connected route as `repaired_route_arc_ids`.
+- `hmm_viterbi/tune_hmm_params.py`: 4x5 sigma/beta grid on student_test; selected sigma=25, beta=50
+  (flat surface: 86.9%-88.9% pointwise accuracy across all 20 settings).
+- `model_training/calibrate_model.py`: isotonic calibration experiment (group-aware); better log
+  loss/Brier but no accuracy gain and an 88MB artifact, so not adopted.
+- `api/utils.py`: `evaluator_test` is checked before `student_test` for trip discovery/lookup.
+  Only status/JSON-shape was verified on an evaluator trip; no evaluator metric was inspected or used.

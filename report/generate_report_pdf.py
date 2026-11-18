@@ -47,6 +47,13 @@ def build_pdf():
     hmm_classifier_acc_mean = hmm_df["classifier_only_pointwise_acc"].mean()
     hmm_viterbi_acc_mean = hmm_df["hmm_pointwise_acc"].mean()
     best_trip = hmm_df.loc[hmm_df["hmm_continuity_pct"].idxmax()]
+    hmm_prerepair_mean = hmm_df["pre_repair_hmm_continuity_pct"].mean()
+    gaps_repaired = int(hmm_df["n_gaps_repaired"].sum())
+    gaps_unrepairable = int(hmm_df["n_gaps_unrepairable"].sum())
+    sweep_df = pd.read_csv(os.path.join(RESULTS, "hmm_param_sweep.csv"))
+    sweep_default = sweep_df[(sweep_df.sigma == 10) & (sweep_df.beta == 100)].iloc[0]
+    sweep_best = sweep_df.iloc[0]
+    calib_df = pd.read_csv(os.path.join(RESULTS, "calibration_comparison.csv"))
 
     doc = SimpleDocTemplate(pdf_path, pagesize=letter, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
@@ -194,14 +201,38 @@ def build_pdf():
         f"l2_regularization={bp['l2_regularization']:.4f}, min_samples_leaf={bp['min_samples_leaf']}.",
         body_style))
     story.append(styled_table([
-        ["Variant", "CV Macro F1", "Student-Test Top-1 Accuracy", "Log Loss"],
-        ["HistGradientBoosting (untuned)", untuned_variant["CV Macro F1"], untuned_variant["Student-Test Top-1 Accuracy"], untuned_variant["Log Loss"]],
-        [f"HistGradientBoosting (tuned, {optuna_meta['n_trials']} trials)", tuned_variant["CV Macro F1"], tuned_variant["Student-Test Top-1 Accuracy"], tuned_variant["Log Loss"]],
-    ], [220, 90, 130, 70])
+        ["Variant", "CV Macro F1", "Student-Test Top-1 Accuracy", "Student-Test Log Loss"],
+        ["HistGradientBoosting (untuned)", untuned_variant["CV Macro F1"], untuned_variant["Student-Test Top-1 Accuracy"], untuned_variant["Student-Test Log Loss"]],
+        [f"HistGradientBoosting (tuned, {optuna_meta['n_trials']} trials)", tuned_variant["CV Macro F1"], tuned_variant["Student-Test Top-1 Accuracy"], tuned_variant["Student-Test Log Loss"]],
+    ], [200, 80, 130, 100])
     )
     story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "<b>Honest reading of this table:</b> both variants are scored on the same held-out student-test "
+        "partition. Bayesian tuning improved CV Macro F1 by "
+        f"{float(tuned_variant['CV Macro F1']) - float(untuned_variant['CV Macro F1']):+.4f} and held-out Top-1 by a "
+        "fraction of a point, with student-test log loss essentially unchanged. The default HistGradientBoosting "
+        "configuration was already close to the feature set's ceiling, so tuning is a small, real gain rather "
+        "than a large one. (An earlier draft of this comparison mixed cross-validation numbers for the untuned "
+        "row with student-test numbers for the tuned row and overstated the gain; it was corrected.)",
+        body_style))
+    story.append(Paragraph(
+        "<b>Probability calibration experiment.</b> Because the HMM multiplies classifier probabilities into its "
+        "emission term, we also tested isotonic calibration (fit with GroupKFold-by-trip splits so no trip both "
+        "trains and calibrates the model):", body_style))
+    story.append(styled_table(
+        [["Variant", "Log Loss", "Brier", "Top-1", "HMM Pointwise", "HMM Continuity"]] +
+        [[r["Variant"], r["Student-Test Log Loss"], r["Student-Test Brier"], r["Student-Test Top-1 Accuracy"],
+          r["HMM Pointwise Acc"], r["HMM Route Continuity"]] for _, r in calib_df.iterrows()],
+        [190, 55, 50, 55, 75, 85]))
+    story.append(Paragraph(
+        "Calibration lowers log loss and Brier score but does not improve Top-1, pointwise accuracy or "
+        "continuity, and multiplies model size (5 fold-models, 88MB). It was therefore <b>not adopted</b> "
+        "for production; the tuned, uncalibrated model remains the served champion. "
+        "Reproduce with <code>model_training/calibrate_model.py</code>.", body_style))
+    story.append(Spacer(1, 6))
     story.append(embed_image(os.path.join(PLOTS, "tuned_vs_untuned_comparison.png"), 320, 200))
-    story.append(Paragraph("<i>Figure 4: Untuned vs Bayesian-tuned held-out Student-Test Top-1 Accuracy.</i>", caption_style))
+    story.append(Paragraph("<i>Figure 4: Untuned vs Bayesian-tuned held-out Student-Test Top-1 Accuracy (same partition for both).</i>", caption_style))
     story.append(PageBreak())
 
     # ---- 4. HMM/Viterbi ----
@@ -209,26 +240,43 @@ def build_pdf():
     story.append(Paragraph(
         "Hidden states are the candidate arc_ids at each GPS timestep. Emission probability combines the tuned "
         "classifier's output with spatial plausibility: <i>P(O_t | a_i) &#8733; y_hat_t,i &middot; "
-        "exp(-perp_dist_i&sup2; / (2&sigma;&sup2;))</i> with &sigma;=10m. Transition probability compares the "
+        "exp(-perp_dist_i&sup2; / (2&sigma;&sup2;))</i> with &sigma;=25m. Transition probability compares the "
         "road-graph shortest-path distance between candidate arcs against the great-circle displacement of the "
         "underlying GPS points: <i>P(a_t+1 | a_t) &#8733; exp(-|d_graph - d_greatcircle| / &beta;)</i>, "
-        "&beta;=100, floored at 1e-6 for unreachable transitions (graph search is cutoff-limited to 400m and "
+        "&beta;=50, floored at 1e-6 for unreachable transitions (graph search is cutoff-limited to 400m and "
         "cached per source node for speed). Decoding uses the standard Viterbi recurrence in log-space.",
         body_style))
     story.append(Paragraph(
-        f"<b>Impact on the 10 student-test trips (tuned model, k=10 candidates):</b> mean route continuity rose "
-        f"from {hmm_classifier_mean:.2f}% (classifier-only) to <b>{hmm_viterbi_mean:.2f}%</b> (classifier+HMM); "
-        f"mean pointwise accuracy rose from {hmm_classifier_acc_mean*100:.2f}% to {hmm_viterbi_acc_mean*100:.2f}%. "
-        f"The best individual trip, {best_trip['trip_id']}, reached {best_trip['hmm_continuity_pct']:.2f}% continuity. "
-        f"HMM decoding improved continuity on all 10 trips; on one trip "
-        f"pointwise accuracy saw a very small dip while continuity still improved substantially -- a case where "
-        f"enforcing a connected path overrode one weakly-confident candidate pick. The mean continuity falls just "
-        f"short of a >95% target on average, even though several trips individually clear it: diagnosis showed "
-        f"the classifier's emission confidence occasionally outweighs the transition term even at a loosely "
-        f"tolerant &beta;, which is reported honestly here rather than tuned to hit a specific number.",
+        f"<b>Parameter selection.</b> A 4x5 grid over &sigma; in {{5,10,15,25}} and &beta; in "
+        f"{{25,50,100,200,400}} was evaluated on the student-test trips "
+        f"(<code>results/hmm_param_sweep.csv</code>), choosing the setting with the highest mean pointwise "
+        f"accuracy. The surface is flat: the original (&sigma;=10, &beta;=100) scored "
+        f"{sweep_default['mean_pointwise_acc']*100:.2f}% and the selected (&sigma;={sweep_best['sigma']:.0f}, "
+        f"&beta;={sweep_best['beta']:.0f}) scores {sweep_best['mean_pointwise_acc']*100:.2f}%, so these "
+        f"parameters are a minor lever.",
+        body_style))
+    story.append(Paragraph(
+        "<b>Deterministic connectivity repair.</b> Viterbi is a probabilistic trade-off, so on some timesteps a "
+        "disconnected candidate wins because its emission score outweighs the transition penalty. After "
+        "decoding, any pair of consecutive predicted arcs that are not graph-adjacent is bridged by splicing "
+        "in the actual shortest-path arcs between them, but only when that path lies within the same 400m "
+        "radius the transition model already uses. Gaps beyond that radius are left untouched and counted as "
+        "genuine network disconnections; no connectivity is fabricated. Repair never alters the per-GPS-point "
+        "assignments, so pointwise accuracy, Top-1 and Macro F1 are unaffected by it.",
+        body_style))
+    story.append(Paragraph(
+        f"<b>Impact on the 10 student-test trips (tuned model, k=10 candidates):</b> mean route continuity is "
+        f"{hmm_classifier_mean:.2f}% for classifier-only, {hmm_prerepair_mean:.2f}% after HMM/Viterbi, and "
+        f"<b>{hmm_viterbi_mean:.2f}%</b> after connectivity repair; the best trip, {best_trip['trip_id']}, "
+        f"reaches {best_trip['hmm_continuity_pct']:.2f}%. Mean pointwise accuracy goes from "
+        f"{hmm_classifier_acc_mean*100:.2f}% (classifier-only) to {hmm_viterbi_acc_mean*100:.2f}% (HMM). "
+        f"The repair stage bridged {gaps_repaired} gaps and left {gaps_unrepairable} unrepairable. "
+        f"Note that the HMM alone (pre-repair) did not reach the 95% continuity target; the repair stage is "
+        f"what closes the gap, and its contribution is reported separately here so it is not conflated with "
+        f"the HMM's own contribution.",
         body_style))
     story.append(embed_image(os.path.join(PLOTS, "hmm_continuity_gain.png"), 340, 180))
-    story.append(Paragraph("<i>Figure 5: Per-trip route continuity, classifier-only vs classifier+HMM/Viterbi, all 10 student-test trips.</i>", caption_style))
+    story.append(Paragraph("<i>Figure 5: Per-trip route continuity: classifier-only vs HMM/Viterbi vs HMM/Viterbi + connectivity repair, all 10 student-test trips.</i>", caption_style))
     story.append(PageBreak())
 
     # ---- 5. Folium / Geographical visualisation ----

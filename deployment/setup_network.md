@@ -93,7 +93,7 @@ curl http://<LAPTOP_1_IP>:8000/trips
 Expected output:
 ```json
 {
-  "trips": ["00000000", "00000007", "00000009", "00000040", "00000052", "00000056", "00000065", "00000076", "00000077", "00000091"],
+  "trips": ["00000015", "00000017", "00000023", "00000030", "00000049", "00000059", "00000067", "00000073", "00000087", "00000094"],
   "count": 10
 }
 ```
@@ -105,9 +105,9 @@ cd PathSnap-MapMatching
 streamlit run ui/app.py
 ```
 1. In the Streamlit web browser (`http://localhost:8501`), enter `http://<LAPTOP_1_IP>:8000` into the server URL input box.
-2. Select any evaluation trip (e.g., `00000000`).
+2. Select any evaluation trip (e.g., `00000015`).
 3. Click **"Snap Route & Evaluate"**.
-4. The UI sends a `POST /predict/00000000` request to Laptop 1, retrieves the snapped geometry and ground-truth metrics, and renders the multi-layer Folium map.
+4. The UI sends a `POST /predict/00000015` request to Laptop 1, retrieves the snapped geometry and ground-truth metrics, and renders the multi-layer Folium map.
 
 ---
 
@@ -117,8 +117,8 @@ During the evaluation, the faculty will observe both screens simultaneously:
 - [x] **Laptop 1 Terminal:** Observe live request banners on every prediction:
   ```text
   ================================================================================
-  [2026-11-18 10:32:00] [EVALUATION REQUEST] POST /predict/00000000
-  [2026-11-18 10:32:00] Client IP: 192.168.1.110 | Trip ID: 00000000
+  [2026-11-18 10:32:00] [EVALUATION REQUEST] POST /predict/00000015
+  [2026-11-18 10:32:00] Client IP: 192.168.1.110 | Trip ID: 00000015
   [2026-11-18 10:32:00] Data Ingestion: Loaded 2,503 GPS points | 8,542 nodes | 18,196 arcs
   [2026-11-18 10:32:00] Sequential Decoding: Running HMM Viterbi road network snapping...
   [2026-11-18 10:32:00] Server-Side Ground-Truth Evaluation Results:
