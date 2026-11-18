@@ -77,13 +77,17 @@ if evaluate_button:
             pred_resp = requests.post(f"{api_base_url}/predict/{selected_trip}", timeout=10)
             if pred_resp.status_code == 200:
                 data = pred_resp.json()
-                
+                metrics = data.get("metrics", data)  # supports flat or nested {"metrics": {...}} response shapes
+                predicted_arc_ids = data.get("predicted_route", {}).get("arc_ids", data.get("predicted_arc_ids", []))
+
                 # Metrics Row
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Top-1 Accuracy", f"{data['top1_accuracy'] * 100:.1f}%")
-                m2.metric("Macro F1-Score", f"{data['macro_f1']:.3f}")
-                m3.metric("Route Continuity", f"{data['route_continuity_pct']:.1f}%")
-                m4.metric("Inference Latency", f"{data['inference_time_ms']} ms")
+                m1.metric("Top-1 Accuracy", f"{metrics.get('top1_accuracy', 0) * 100:.1f}%")
+                m2.metric("Macro F1-Score", f"{metrics.get('macro_f1', 0):.3f}")
+                m3.metric("Route Continuity", f"{metrics.get('route_continuity', metrics.get('route_continuity_pct', 0)):.1f}%")
+                m4.metric("Inference Latency", f"{metrics.get('inference_latency_ms', metrics.get('inference_time_ms', 0))} ms")
+
+                st.success(f"✅ HMM Viterbi decoding complete — {len(predicted_arc_ids)} continuous road arcs reconstructed.")
 
                 st.divider()
 
@@ -105,12 +109,21 @@ if evaluate_button:
                         nodes_df=nodes_df,
                         arcs_df=arcs_df,
                         route_arcs=route_df["arc_id"].values.tolist(),
-                        predicted_arcs=data.get("predicted_arc_ids", []),
+                        predicted_arcs=predicted_arc_ids,
                         trip_id=selected_trip
                     )
-                    
+
                     # Render map cleanly in Streamlit
-                    components.html(folium_map._repr_html_(), height=550)
+                    map_html = folium_map.get_root().render()
+                    components.html(map_html, height=550)
+
+                    st.download_button(
+                        label="⬇️ Download Interactive HTML Map",
+                        data=map_html,
+                        file_name=f"trip_{selected_trip}_map.html",
+                        mime="text/html",
+                        use_container_width=True,
+                    )
                 else:
                     st.info("Local trajectory data not found on client. Showing metric scorecard only.")
             else:

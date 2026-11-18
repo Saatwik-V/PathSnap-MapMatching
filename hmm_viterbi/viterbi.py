@@ -18,16 +18,7 @@ import networkx as nx
 import joblib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data_processing.candidate_gen import process_trip_candidates
-
-FEATURE_COLS = [
-    "perp_dist",
-    "proj_ratio",
-    "heading_error",
-    "arc_length",
-    "dist_to_start",
-    "dist_to_end",
-]
+from feature_engineering.extract_features import extract_features_for_trip, FEATURE_COLS
 
 MIN_PROB = 1e-6
 EARTH_RADIUS_M = 6371000.0
@@ -149,7 +140,7 @@ def prepare_trip_context(
     """
     model, scaler, model_name = load_classifier(model_path)
 
-    candidates_df = process_trip_candidates(trip_id, base_dir=base_dir, k_candidates=k_candidates)
+    candidates_df = extract_features_for_trip(trip_id, base_dir=base_dir, k_candidates=k_candidates)
     if candidates_df.empty:
         return {"trip_id": trip_id, "error": "no candidates generated"}
 

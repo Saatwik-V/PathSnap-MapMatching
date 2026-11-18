@@ -23,9 +23,15 @@ FEATURE_COLS = [
     "perp_dist",
     "proj_ratio",
     "heading_error",
+    "heading_cos",
     "arc_length",
     "dist_to_start",
-    "dist_to_end"
+    "dist_to_end",
+    "speed_mps",
+    "delta_t",
+    "candidate_rank",
+    "dist_diff_endpoints",
+    "traversal_time_est",
 ]
 
 def run_5_model_study(
