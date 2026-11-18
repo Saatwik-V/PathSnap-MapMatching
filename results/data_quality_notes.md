@@ -85,3 +85,81 @@ The dataset is not confined to a single city; trips originate from distinct glob
 2. **Ground-Truth Sequence Mapping:** Ground-truth routes provide an ordered list of arcs without explicit per-point timestamps. We map each GPS observation $P_t$ to the ground truth route using a normalized temporal window along the route sequence, selecting the segment with minimal perpendicular distance within the window.
 3. **Top-K Candidates:** We retain $K=10$ nearest candidate road segments per GPS point. A candidate is assigned binary label `y = 1` if its `arc_id` matches the aligned ground-truth route arc, and `y = 0` otherwise.
 4. **Zero Data Leakage:** Candidate generation and feature extraction operate purely trip-by-trip without any cross-trip aggregation or global normalization.
+
+
+## 6. Expanded 12-Feature Specification & Mathematical Justifications
+
+Following Review 1 feedback, the candidate feature space was expanded from the baseline 6 geometric variables to a comprehensive 12-feature suite encompassing spatial proximity, longitudinal alignment, directional kinematics, temporal sampling dynamics, and physical traversability.
+
+### Feature 1: Perpendicular Distance (`perp_dist`)
+- **Mathematical Formula:**
+  $$d_{\perp} = \| P - P_{\text{proj}} \|_2 = \sqrt{(x_p - x_{\text{proj}})^2 + (y_p - y_{\text{proj}})^2}$$
+  where $P_{\text{proj}} = A + t_{\text{clamp}} \cdot (B - A)$ is the orthogonal projection of observation $P$ onto segment $AB$.
+- **Domain:** $[0.0, \infty)$ meters.
+- **Justification & Physics:** Grounded in GPS sensor noise models (Gaussian emission error $\mathcal{N}(0, \sigma^2)$). True road segments exhibit significantly lower orthogonal deviation than adjacent parallel roads or cross-streets ($r = -0.0855$).
+
+### Feature 2: Projection Ratio (`proj_ratio`)
+- **Mathematical Formula:**
+  $$t = \frac{(P - A) \cdot (B - A)}{\| B - A \|_2^2}, \quad t_{\text{clamp}} = \text{clip}(t, 0.0, 1.0)$$
+- **Domain:** $[0.0, 1.0]$ dimensionless.
+- **Justification & Physics:** Identifies where along the segment length the vehicle falls. Interior values ($0.1 \le t \le 0.9$) indicate steady-state cruising, whereas extreme boundary values ($t=0.0$ or $t=1.0$) indicate junction approaches or turns, informing transition feasibility.
+
+### Feature 3: Heading Error (`heading_error`)
+- **Mathematical Formula:**
+  $$\theta_{\text{error}} = \min(|\theta_{\text{veh}} - \theta_{\text{arc}}| \pmod{360^\circ}, 360^\circ - (|\theta_{\text{veh}} - \theta_{\text{arc}}| \pmod{360^\circ}))$$
+- **Domain:** $[0.0^\circ, 180.0^\circ]$.
+- **Justification & Physics:** Strongest individual discriminator ($r = -0.5295$). On dual carriageways and urban grids, opposite-direction or perpendicular roads may be spatially closer than the true forward lane; heading error provides immediate negative penalization for reverse-flow candidates.
+
+### Feature 4: Road Arc Length (`arc_length`)
+- **Mathematical Formula:**
+  $$L = \| B - A \|_2 = \sqrt{(x_b - x_a)^2 + (y_b - y_a)^2}$$
+- **Domain:** $(0.0, \infty)$ meters.
+- **Justification & Physics:** Captures road hierarchy and classification. Highways and arterials have longer arc lengths (hundreds of meters) and sustain higher speeds, while dense urban alleyways have short segment lengths ($<30$m). Helps tree models distinguish highway vs secondary street matching ($r = +0.0707$).
+
+### Feature 5: Distance to Start Node (`dist_to_start`)
+- **Mathematical Formula:**
+  $$d_{\text{start}} = \| P - A \|_2 = \sqrt{(x_p - x_a)^2 + (y_p - y_a)^2}$$
+- **Domain:** $[0.0, \infty)$ meters.
+- **Justification & Physics:** Provides direct metric proximity to the entry intersection. Crucial for HMM Viterbi decoding when determining whether a vehicle has recently traversed a node.
+
+### Feature 6: Distance to End Node (`dist_to_end`)
+- **Mathematical Formula:**
+  $$d_{\text{end}} = \| P - B \|_2 = \sqrt{(x_p - x_b)^2 + (y_p - y_b)^2}$$
+- **Domain:** $[0.0, \infty)$ meters.
+- **Justification & Physics:** Measures distance remaining until the next network intersection. A decaying $d_{\text{end}}$ signals imminent arc transition.
+
+### Feature 7: Instantaneous Vehicle Speed (`speed_mps`)
+- **Mathematical Formula:**
+  $$v = \frac{\| P_t - P_{t-1} \|_2}{\Delta t}$$
+- **Domain:** $[0.0, \infty)$ meters/second.
+- **Justification & Physics:** Vehicle velocity dictates physically accessible road classes. High speeds ($>20$ m/s) rule out pedestrian paths, service alleys, and sharp turns, restricting viable candidates to major highways and arterials.
+
+### Feature 8: Directional Heading Cosine (`heading_cos`)
+- **Mathematical Formula:**
+  $$\cos(\theta_{\text{error}}) = \cos\left(\frac{\pi}{180} \theta_{\text{error}}\right)$$
+- **Domain:** $[-1.0, +1.0]$.
+- **Justification & Physics:** High positive correlation ($r = +0.5215$). Provides a smooth, non-monotonic mapping for linear models (Logistic Regression) and neural networks (MLP). $+1.0$ indicates perfect alignment with traffic flow; $0.0$ indicates perpendicular motion; $-1.0$ indicates opposing direction.
+
+### Feature 9: Sampling Interval (`delta_t`)
+- **Mathematical Formula:**
+  $$\Delta t = t_i - t_{i-1}$$
+- **Domain:** $(0.0, \infty)$ seconds.
+- **Justification & Physics:** Quantifies GPS receiver lag and dropouts. When $\Delta t \gg 1.0$s (e.g. tunnel exits, signal loss), spatial proximity degrades in reliability, signaling models to rely more heavily on road continuity and graph topology.
+
+### Feature 10: Spatial Candidate Rank (`candidate_rank`)
+- **Mathematical Formula:**
+  $$\text{rank}_i = \text{argsort}_{k}(d_{\perp}) \in \{0, 1, \dots, K-1\}$$
+- **Domain:** $\{0, 1, \dots, K-1\}$.
+- **Justification & Physics:** Strong negative ordinal predictor ($r = -0.1114$). The nearest candidate ($\text{rank}=0$) holds the highest prior probability of being the ground truth; higher ranks require exceptionally strong heading and kinematic evidence to overturn the rank prior.
+
+### Feature 11: Endpoint Distance Asymmetry (`dist_diff_endpoints`)
+- **Mathematical Formula:**
+  $$\Delta d_{\text{endpoints}} = | d_{\text{start}} - d_{\text{end}} |$$
+- **Domain:** $[0.0, L]$ meters.
+- **Justification & Physics:** Measures longitudinal positioning along the segment ($r = +0.0889$). When the vehicle is at the midpoint, $\Delta d \approx 0$; as the vehicle reaches either endpoint, $\Delta d \to L$. Interacts with `proj_ratio` to validate vehicle traversal progress.
+
+### Feature 12: Estimated Traversal Time (`traversal_time_est`)
+- **Mathematical Formula:**
+  $$\tau_{\text{est}} = \frac{L}{\max(v, 0.5)}$$
+- **Domain:** $(0.0, \infty)$ seconds.
+- **Justification & Physics:** Couples graph topology with kinematic state ($r = +0.0420$). Compares segment traversal duration against observation frequency, identifying whether traversing the candidate arc is temporally consistent with the elapsed trip time.

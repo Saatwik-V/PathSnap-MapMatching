@@ -1,14 +1,24 @@
 """
-Candidate Generation & Feature Extraction Pipeline - PathSnap
+Candidate Generation & Feature Extraction Pipeline - PathSnap (Phase 2 - 12 Features)
 Authors: Vikas Jadar & Saatwik
-Extracts nearest candidate road segments per GPS observation and computes geometric/kinematic features.
+Extracts nearest candidate road segments per GPS observation and computes 12 geometric/kinematic features.
 """
 
 import os
-import glob
+import sys
+import argparse
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
+
+# Add repo root to module search path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from feature_engineering.extract_features import (
+    project_local_metric,
+    compute_kinematics,
+    compute_candidate_features,
+    FEATURE_COLUMNS_12
+)
 
 def process_trip_candidates(
     trip_id: str,
@@ -17,9 +27,9 @@ def process_trip_candidates(
     max_radius_m: float = 60.0
 ) -> pd.DataFrame:
     """
-    Extracts candidate road segments and features for a single trip.
+    Extracts candidate road segments and 12 geometric/kinematic features for a single trip.
     """
-    trip_path = os.path.join(base_dir, trip_id)
+    trip_path = os.path.join(base_dir, str(trip_id))
     track_p = os.path.join(trip_path, f"{trip_id}.track")
     nodes_p = os.path.join(trip_path, f"{trip_id}.nodes")
     arcs_p = os.path.join(trip_path, f"{trip_id}.arcs")
@@ -32,18 +42,14 @@ def process_trip_candidates(
     nodes = pd.read_csv(nodes_p, sep=r"\s+", header=None, names=["lon", "lat"])
     arcs = pd.read_csv(arcs_p, sep=r"\s+", header=None, names=["u", "v"])
     
-    route_arcs = []
+    route_arcs = set()
     if os.path.exists(route_p):
         route = pd.read_csv(route_p, sep=r"\s+", header=None, names=["arc_id"])
         route_arcs = set(route["arc_id"].values)
 
     # Dynamic local metric projection (meters)
-    mean_lat = track["lat"].mean()
-    lat_m = 111139.0
-    lon_m = 111139.0 * np.cos(np.radians(mean_lat))
-
-    node_x = nodes["lon"].values * lon_m
-    node_y = nodes["lat"].values * lat_m
+    pt_x, pt_y, ref_lon, ref_lat = project_local_metric(track["lon"].values, track["lat"].values)
+    node_x, node_y, _, _ = project_local_metric(nodes["lon"].values, nodes["lat"].values, ref_lon, ref_lat)
 
     u_indices = arcs["u"].values
     v_indices = arcs["v"].values
@@ -63,20 +69,19 @@ def process_trip_candidates(
     mid_y = (u_y + v_y) * 0.5
     tree = cKDTree(np.column_stack([mid_x, mid_y]))
 
-    pt_x = track["lon"].values * lon_m
-    pt_y = track["lat"].values * lat_m
     N_pts = len(track)
 
-    # GPS headings (velocity vector)
-    vx = np.gradient(pt_x)
-    vy = np.gradient(pt_y)
-    gps_headings = np.arctan2(vy, vx)
+    # Instantaneous kinematics: heading, speed (m/s), and delta_t (s)
+    headings, speeds, delta_ts = compute_kinematics(pt_x, pt_y, track["time"].values)
 
     rows = []
     # Query spatial tree
     for i in range(N_pts):
         px, py = pt_x[i], pt_y[i]
         t_sec = track["time"].iloc[i]
+        v_h = headings[i]
+        speed_i = speeds[i]
+        dt_i = delta_ts[i]
         
         # Query k nearest arcs
         dists, cand_arc_ids = tree.query([px, py], k=k_candidates)
@@ -107,29 +112,40 @@ def process_trip_candidates(
             dist_to_start = np.hypot(px - ax, py - ay)
             dist_to_end = np.hypot(px - bx, py - by)
 
-            # Heading error
-            arc_heading = np.arctan2(seg_dy, seg_dx)
-            h_diff = np.abs(np.degrees(gps_headings[i] - arc_heading))
+            # Heading error & cosine
+            arc_heading = np.degrees(np.arctan2(seg_dy, seg_dx)) % 360.0
+            h_diff = np.abs(v_h - arc_heading) % 360.0
             heading_error = min(h_diff, 360.0 - h_diff)
-            if heading_error > 180.0:
-                heading_error = 360.0 - heading_error
+            heading_cos = np.cos(np.radians(heading_error))
+
+            # Dist diff endpoints
+            dist_diff_endpoints = np.abs(dist_to_start - dist_to_end)
+
+            # Traversal time estimate
+            traversal_time_est = L / max(speed_i, 0.5)
 
             # Label assignment
             is_true_route = 1 if arc_id in route_arcs else 0
 
             rows.append({
-                "trip_id": trip_id,
+                "trip_id": str(trip_id),
                 "obs_idx": i,
-                "timestamp": t_sec,
+                "timestamp": round(float(t_sec), 2),
                 "candidate_arc_id": int(arc_id),
                 "candidate_rank": rank,
-                "perp_dist": round(float(perp_dist), 2),
-                "proj_ratio": round(float(t_clamped), 3),
+                "perp_dist": round(float(perp_dist), 4),
+                "proj_ratio": round(float(t_clamped), 4),
                 "heading_error": round(float(heading_error), 2),
                 "arc_length": round(float(L), 2),
                 "dist_to_start": round(float(dist_to_start), 2),
                 "dist_to_end": round(float(dist_to_end), 2),
-                "label_y": is_true_route
+                "speed_mps": round(float(speed_i), 3),
+                "heading_cos": round(float(heading_cos), 4),
+                "delta_t": round(float(dt_i), 2),
+                "dist_diff_endpoints": round(float(dist_diff_endpoints), 2),
+                "traversal_time_est": round(float(traversal_time_est), 2),
+                "label_y": is_true_route,
+                "y": is_true_route
             })
 
     return pd.DataFrame(rows)
@@ -137,19 +153,24 @@ def process_trip_candidates(
 def build_dataset(
     data_dir: str = "Student folder/train",
     output_csv: str = "results/train_features.csv",
-    max_trips: int = 10
+    max_trips: int = 10,
+    k_candidates: int = 5
 ):
     """
-    Builds the candidate features dataset across trips.
+    Builds the candidate features dataset across trips with 12 features.
     """
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     trip_dirs = sorted([d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))])
-    selected_trips = trip_dirs[:max_trips]
     
-    print(f"Building candidate feature dataset for {len(selected_trips)} trips from {data_dir}...")
+    if max_trips <= 0 or max_trips > len(trip_dirs):
+        selected_trips = trip_dirs
+    else:
+        selected_trips = trip_dirs[:max_trips]
+    
+    print(f"Building candidate feature dataset (12 features) for {len(selected_trips)} trips from {data_dir}...")
     dfs = []
     for idx, t in enumerate(selected_trips):
-        df_trip = process_trip_candidates(t, base_dir=data_dir)
+        df_trip = process_trip_candidates(t, base_dir=data_dir, k_candidates=k_candidates)
         if not df_trip.empty:
             dfs.append(df_trip)
             print(f"  [{idx+1}/{len(selected_trips)}] Trip {t}: {len(df_trip):,} candidate rows generated.")
@@ -157,14 +178,18 @@ def build_dataset(
     if dfs:
         all_df = pd.concat(dfs, ignore_index=True)
         all_df.to_csv(output_csv, index=False)
-        print(f"\nSuccessfully generated {len(all_df):,} rows.")
+        print(f"\nSuccessfully generated {len(all_df):,} rows with 12 features.")
         print(f"Saved to: {output_csv}")
         return all_df
     return pd.DataFrame()
 
 if __name__ == "__main__":
-    import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--trips", type=int, default=5, help="Number of trips to process for initial test")
+    parser.add_argument("--trips", type=int, default=10, help="Number of trips to process (default: 10, 0 for all)")
+    parser.add_argument("--split", type=str, default="train", choices=["train", "test"], help="train or test split")
+    parser.add_argument("--k", type=int, default=5, help="Number of candidates per observation (default: 5)")
     args = parser.parse_args()
-    build_dataset(max_trips=args.trips)
+    
+    split_dir = "Student folder/train" if args.split == "train" else "Student folder/student_test"
+    out_file = f"results/{args.split}_features.csv"
+    build_dataset(data_dir=split_dir, output_csv=out_file, max_trips=args.trips, k_candidates=args.k)
