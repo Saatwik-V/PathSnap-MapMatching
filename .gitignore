@@ -1,0 +1,23 @@
+# Python environment & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+venv/
+env/
+.venv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Large dataset folders (keep raw data local, only commit small sample / configs)
+# Uncomment the line below if GitHub repository size exceeds limits
+# Student folder/
+
+# Experiment artifacts & temporary logs
+*.log
