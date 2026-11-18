@@ -21,3 +21,7 @@ PathSnap_student_materials/
 
 # Experiment artifacts & temporary logs
 *.log
+
+# Large regenerable feature datasets (exceeds GitHub's 100MB hard limit; regenerate via
+# feature_engineering/extract_features.py build_dataset() -- see README)
+results/train_features.csv

@@ -1,141 +1,133 @@
-#!/usr/bin/env python3
 """
-PathSnap: Feature Engineering Engine
-Author: Vikas Jadar (Data Pipeline & Feature Extraction Specialist)
+Feature Engineering - PathSnap
+Expands the 6 base geometric features from data_processing.candidate_gen into the
+12-feature representation used for model training and inference (kinematic +
+geometric + topological-rank features), and builds the train/test feature tables.
 
-Calculates the 6 fundamental geometric and kinematic features for candidate road arcs:
-1. perp_dist: Orthogonal perpendicular distance from GPS point to road segment (meters).
-2. proj_ratio: Fractional projection along the segment vector [0.0, 1.0].
-3. heading_error: Absolute angular deviation between vehicle trajectory and road arc [0 deg, 180 deg].
-4. arc_length: Physical metric length of the candidate road segment (meters).
-5. dist_to_start: Euclidean distance from GPS point to arc start node (meters).
-6. dist_to_end: Euclidean distance from GPS point to arc end node (meters).
+Base (from candidate_gen, per GPS-point x candidate-arc pair):
+    perp_dist, proj_ratio, heading_error, arc_length, dist_to_start, dist_to_end,
+    candidate_rank
+
+Added here (kinematic / derived):
+    heading_cos          cos(radians(heading_error))
+    speed_mps            displacement between consecutive GPS points / max(delta_t, 0.1s)
+    delta_t              timestamp difference (s) since the previous observation
+    dist_diff_endpoints  abs(dist_to_start - dist_to_end)
+    traversal_time_est   arc_length / max(speed_mps, 0.5 m/s)
 """
 
+import os
+import sys
 import numpy as np
+import pandas as pd
 
-EARTH_RADIUS = 6371000.0  # Mean spherical Earth radius in meters
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from data_processing.candidate_gen import process_trip_candidates
 
-def project_local_metric(lons, lats, ref_lon=None, ref_lat=None):
-    """
-    Projects WGS84 (lon, lat) degrees to local Cartesian metric (x, y) coordinates
-    using an Equirectangular projection centered at the trajectory's centroid.
-    Accurate to within <0.1% over trajectory extents (<100 km).
-    """
-    lons = np.asarray(lons, dtype=float)
-    lats = np.asarray(lats, dtype=float)
-    
-    if ref_lon is None:
-        ref_lon = float(np.mean(lons))
-    if ref_lat is None:
-        ref_lat = float(np.mean(lats))
-        
-    lat0_rad = np.radians(ref_lat)
-    lon0_rad = np.radians(ref_lon)
-    
-    x = EARTH_RADIUS * (np.radians(lons) - lon0_rad) * np.cos(lat0_rad)
-    y = EARTH_RADIUS * (np.radians(lats) - lat0_rad)
-    
-    return x, y, ref_lon, ref_lat
+FEATURE_COLS = [
+    "perp_dist",
+    "proj_ratio",
+    "heading_error",
+    "heading_cos",
+    "arc_length",
+    "dist_to_start",
+    "dist_to_end",
+    "speed_mps",
+    "delta_t",
+    "candidate_rank",
+    "dist_diff_endpoints",
+    "traversal_time_est",
+]
 
-def compute_vehicle_headings(track_x, track_y):
-    """
-    Computes instantaneous vehicle movement heading in degrees [0, 360)
-    from consecutive track points.
-    Uses forward difference for first point, backward for last, and central for interior.
-    For stationary points (displacement < 0.1m), retains previous heading.
-    """
-    n = len(track_x)
-    headings = np.zeros(n, dtype=float)
-    if n < 2:
-        return headings
-        
-    # Forward differences
-    dx = np.zeros(n, dtype=float)
-    dy = np.zeros(n, dtype=float)
-    
-    # Interior: central differences
-    dx[1:-1] = track_x[2:] - track_x[:-2]
-    dy[1:-1] = track_y[2:] - track_y[:-2]
-    
-    # Boundary points
-    dx[0] = track_x[1] - track_x[0]
-    dy[0] = track_y[1] - track_y[0]
-    dx[-1] = track_x[-1] - track_x[-2]
-    dy[-1] = track_y[-1] - track_y[-2]
-    
-    # Compute angles in degrees [0, 360)
-    angles = (np.degrees(np.arctan2(dy, dx)) + 360.0) % 360.0
-    
-    # Handle stationary points where displacement is near zero
-    displacements = np.hypot(dx, dy)
-    last_valid = angles[0]
-    for i in range(n):
-        if displacements[i] > 0.1:
-            last_valid = angles[i]
-        headings[i] = last_valid
-        
-    return headings
 
-def compute_candidate_features(px, py, v_heading, ax1, ay1, ax2, ay2):
-    """
-    Vectorized computation of the 6 geometric features for candidate pairs.
-    
-    Parameters:
-    - px, py: GPS point coordinates (scalars or arrays of shape N)
-    - v_heading: Vehicle heading in degrees [0, 360) (scalar or array of shape N)
-    - ax1, ay1: Candidate arc start node coordinates (arrays of shape N)
-    - ax2, ay2: Candidate arc end node coordinates (arrays of shape N)
-    
-    Returns:
-    - dict with keys:
-      ['perp_dist', 'proj_ratio', 'heading_error', 'arc_length', 'dist_to_start', 'dist_to_end']
-    """
-    px = np.asarray(px, dtype=float)
-    py = np.asarray(py, dtype=float)
-    v_heading = np.asarray(v_heading, dtype=float)
-    ax1 = np.asarray(ax1, dtype=float)
-    ay1 = np.asarray(ay1, dtype=float)
-    ax2 = np.asarray(ax2, dtype=float)
-    ay2 = np.asarray(ay2, dtype=float)
-    
-    # Segment vectors
-    seg_dx = ax2 - ax1
-    seg_dy = ay2 - ay1
-    
-    # 4. arc_length
-    arc_length = np.hypot(seg_dx, seg_dy)
-    L2 = np.maximum(arc_length * arc_length, 1e-12)
-    
-    # Vector from start to point
-    pt_dx = px - ax1
-    pt_dy = py - ay1
-    
-    # 2. proj_ratio (projection parameter t along segment)
-    raw_proj = (pt_dx * seg_dx + pt_dy * seg_dy) / L2
-    proj_ratio = np.clip(raw_proj, 0.0, 1.0)
-    
-    # Projected coordinates on segment
-    proj_x = ax1 + proj_ratio * seg_dx
-    proj_y = ay1 + proj_ratio * seg_dy
-    
-    # 1. perp_dist (distance from GPS point to projected point)
-    perp_dist = np.hypot(px - proj_x, py - proj_y)
-    
-    # 5. dist_to_start & 6. dist_to_end
-    dist_to_start = np.hypot(px - ax1, py - ay1)
-    dist_to_end = np.hypot(px - ax2, py - ay2)
-    
-    # 3. heading_error
-    seg_heading = (np.degrees(np.arctan2(seg_dy, seg_dx)) + 360.0) % 360.0
-    diff = np.abs(v_heading - seg_heading) % 360.0
-    heading_error = np.where(diff > 180.0, 360.0 - diff, diff)
-    
-    return {
-        "perp_dist": perp_dist,
-        "proj_ratio": proj_ratio,
-        "heading_error": heading_error,
-        "arc_length": arc_length,
-        "dist_to_start": dist_to_start,
-        "dist_to_end": dist_to_end
-    }
+def _point_kinematics(track: pd.DataFrame) -> pd.DataFrame:
+    """Per-GPS-point delta_t and speed_mps, from consecutive rows of the raw .track file."""
+    lon = track["lon"].values
+    lat = track["lat"].values
+    t = track["time"].values
+
+    mean_lat = lat.mean()
+    lat_m = 111139.0
+    lon_m = 111139.0 * np.cos(np.radians(mean_lat))
+
+    x = lon * lon_m
+    y = lat * lat_m
+
+    dx = np.diff(x, prepend=x[0])
+    dy = np.diff(y, prepend=y[0])
+    dt = np.diff(t, prepend=t[0])
+    dx[0] = 0.0
+    dy[0] = 0.0
+    dt[0] = 0.0
+
+    disp = np.hypot(dx, dy)
+    delta_t = np.maximum(dt, 0.0)
+    speed_mps = disp / np.maximum(delta_t, 0.1)
+
+    return pd.DataFrame({
+        "obs_idx": np.arange(len(track)),
+        "delta_t": delta_t,
+        "speed_mps": speed_mps,
+    })
+
+
+def extract_features_for_trip(trip_id: str, base_dir: str, k_candidates: int = 10) -> pd.DataFrame:
+    """Generates candidates for one trip and attaches the full 12-feature set."""
+    candidates_df = process_trip_candidates(trip_id, base_dir=base_dir, k_candidates=k_candidates)
+    if candidates_df.empty:
+        return candidates_df
+
+    track_path = os.path.join(base_dir, trip_id, f"{trip_id}.track")
+    track = pd.read_csv(track_path, sep=r"\s+", header=None, names=["lon", "lat", "time"])
+    kinematics = _point_kinematics(track)
+
+    df = candidates_df.merge(kinematics, on="obs_idx", how="left")
+
+    df["heading_cos"] = np.cos(np.radians(df["heading_error"]))
+    df["dist_diff_endpoints"] = (df["dist_to_start"] - df["dist_to_end"]).abs()
+    df["traversal_time_est"] = df["arc_length"] / df["speed_mps"].clip(lower=0.5)
+
+    ordered_cols = ["trip_id", "obs_idx", "timestamp", "candidate_arc_id"] + FEATURE_COLS + ["label_y"]
+    return df[ordered_cols].round(4)
+
+
+def build_dataset(
+    data_dir: str,
+    output_csv: str,
+    max_trips: int = None,
+    k_candidates: int = 10,
+) -> pd.DataFrame:
+    """Builds the 12-feature candidate dataset across all (or the first max_trips) trips in data_dir."""
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    trip_dirs = sorted([d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))])
+    if max_trips is not None:
+        trip_dirs = trip_dirs[:max_trips]
+
+    print(f"Extracting {len(FEATURE_COLS)} features for {len(trip_dirs)} trips from {data_dir}...")
+    dfs = []
+    for idx, t in enumerate(trip_dirs):
+        df_trip = extract_features_for_trip(t, base_dir=data_dir, k_candidates=k_candidates)
+        if not df_trip.empty:
+            dfs.append(df_trip)
+            print(f"  [{idx + 1}/{len(trip_dirs)}] Trip {t}: {len(df_trip):,} rows.")
+
+    if dfs:
+        all_df = pd.concat(dfs, ignore_index=True)
+        all_df.to_csv(output_csv, index=False)
+        print(f"\nSaved {len(all_df):,} rows ({len(FEATURE_COLS)} features) to: {output_csv}")
+        return all_df
+    return pd.DataFrame()
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train_dir", default="Student folder/train")
+    parser.add_argument("--test_dir", default="Student folder/student_test")
+    parser.add_argument("--train_out", default="results/train_features.csv")
+    parser.add_argument("--test_out", default="results/test_features.csv")
+    parser.add_argument("--k_candidates", type=int, default=10)
+    args = parser.parse_args()
+
+    build_dataset(args.train_dir, args.train_out, k_candidates=args.k_candidates)
+    build_dataset(args.test_dir, args.test_out, k_candidates=args.k_candidates)

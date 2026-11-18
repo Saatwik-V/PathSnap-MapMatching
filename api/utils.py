@@ -11,15 +11,16 @@ Provides core utilities for:
 """
 
 import os
+import sys
 import glob
-import math
 import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Any, Optional
-from scipy.spatial import cKDTree
-import networkx as nx
-import joblib
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 logger = logging.getLogger("pathsnap_api")
 
@@ -143,30 +144,6 @@ def load_trip_data(trip_id: str, data_root: Optional[str] = None) -> Dict[str, A
     }
 
 
-def project_to_meters(lon: np.ndarray, lat: np.ndarray, lon0: float, lat0: float) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Local metric projection (Equirectangular flat projection centered at lat0, lon0).
-    Converts (lon, lat) to (x, y) in meters with high local fidelity.
-    """
-    lat0_rad = math.radians(lat0)
-    x = np.radians(lon - lon0) * EARTH_RADIUS * math.cos(lat0_rad)
-    y = np.radians(lat - lat0) * EARTH_RADIUS
-    return x, y
-
-
-def build_road_graph(arcs_df: pd.DataFrame) -> nx.Graph:
-    """
-    Constructs a NetworkX graph from arcs dataframe for connectivity checks.
-    """
-    G = nx.Graph()
-    for _, row in arcs_df.iterrows():
-        u = int(row["from_node"])
-        v = int(row["to_node"])
-        arc_id = int(row["arc_id"])
-        G.add_edge(u, v, arc_id=arc_id)
-    return G
-
-
 def compute_route_continuity(predicted_arcs: List[int], arcs_df: pd.DataFrame) -> float:
     """
     Calculates Route Continuity %:
@@ -254,166 +231,36 @@ def reconstruct_route_pipeline(
     model_path: Optional[str] = None
 ) -> Tuple[List[int], List[int]]:
     """
-    Performs end-to-end trajectory reconstruction:
-    1. Local metric projection
-    2. Candidate generation via KD-Tree
-    3. Geometric feature extraction
-    4. Model scoring (or spatial probability fallback)
-    5. HMM Viterbi dynamic programming decoding
+    Delegates to the canonical hmm_viterbi.viterbi pipeline (12-feature candidate
+    generation via feature_engineering.extract_features + classifier scoring +
+    HMM/Viterbi decoding), so the API serves predictions from the exact same code
+    path used for training and offline evaluation.
+
+    track_df / nodes_df / arcs_df are accepted for backward-compatible call signature
+    (the caller already loaded them for other purposes) but are not reused here --
+    hmm_viterbi.viterbi re-reads the trip's raw files itself, since it also needs the
+    .route file and full road-network graph, which load_trip_data's caller may not
+    always have attached.
     """
-    num_points = len(track_df)
-    if num_points == 0:
+    from hmm_viterbi.viterbi import reconstruct_route as _reconstruct_route
+
+    trip_folder = find_trip_folder(trip_id)
+    base_dir = os.path.dirname(trip_folder)
+
+    resolved_model_path = model_path
+    if not resolved_model_path or not os.path.exists(resolved_model_path):
+        tuned_path = os.path.join(REPO_ROOT, "results", "best_tuned_model.joblib")
+        resolved_model_path = tuned_path if os.path.exists(tuned_path) else model_path
+
+    result = _reconstruct_route(trip_id, base_dir=base_dir, model_path=resolved_model_path)
+    if "error" in result:
+        logger.warning(f"Route reconstruction failed for trip {trip_id}: {result['error']}")
         return [], []
 
-    lon0 = float(track_df["lon"].mean())
-    lat0 = float(track_df["lat"].mean())
-
-    gps_x, gps_y = project_to_meters(track_df["lon"].values, track_df["lat"].values, lon0, lat0)
-    node_x, node_y = project_to_meters(nodes_df["lon"].values, nodes_df["lat"].values, lon0, lat0)
-
-    from_nodes = arcs_df["from_node"].values
-    to_nodes = arcs_df["to_node"].values
-    arc_ids = arcs_df["arc_id"].values
-
-    x1 = node_x[from_nodes]
-    y1 = node_y[from_nodes]
-    x2 = node_x[to_nodes]
-    y2 = node_y[to_nodes]
-
-    mid_x = (x1 + x2) * 0.5
-    mid_y = (y1 + y2) * 0.5
-    segment_lengths = np.hypot(x2 - x1, y2 - y1)
-    segment_lengths_safe = np.where(segment_lengths == 0, 1e-6, segment_lengths)
-
-    tree = cKDTree(np.column_stack([mid_x, mid_y]))
-
-    trained_model = None
-    if model_path and os.path.exists(model_path):
-        try:
-            trained_model = joblib.load(model_path)
-            logger.info(f"Loaded trained champion model from {model_path}")
-        except Exception as e:
-            logger.warning(f"Could not load model from {model_path}: {e}")
-
-    k_candidates = min(10, len(arcs_df))
-    distances, candidate_indices = tree.query(np.column_stack([gps_x, gps_y]), k=k_candidates)
-
-    sigma = 15.0
-    timesteps_candidates = []
-
-    for t in range(num_points):
-        px = gps_x[t]
-        py = gps_y[t]
-
-        if t < num_points - 1:
-            vx = gps_x[t + 1] - px
-            vy = gps_y[t + 1] - py
-        elif t > 0:
-            vx = px - gps_x[t - 1]
-            vy = py - gps_y[t - 1]
-        else:
-            vx, vy = 1.0, 0.0
-        v_heading = math.degrees(math.atan2(vy, vx)) % 360.0
-
-        step_cands = []
-        c_idxs = candidate_indices[t] if k_candidates > 1 else [candidate_indices[t]]
-
-        for idx in c_idxs:
-            arc_id = arc_ids[idx]
-            ax1, ay1 = x1[idx], y1[idx]
-            ax2, ay2 = x2[idx], y2[idx]
-            seg_len = segment_lengths_safe[idx]
-
-            dx = ax2 - ax1
-            dy = ay2 - ay1
-            t_ratio = ((px - ax1) * dx + (py - ay1) * dy) / (seg_len * seg_len)
-            t_clamped = max(0.0, min(1.0, float(t_ratio)))
-
-            proj_x = ax1 + t_clamped * dx
-            proj_y = ay1 + t_clamped * dy
-
-            perp_dist = math.hypot(px - proj_x, py - proj_y)
-            dist_to_start = math.hypot(px - ax1, py - ay1)
-            dist_to_end = math.hypot(px - ax2, py - ay2)
-
-            seg_heading = math.degrees(math.atan2(dy, dx)) % 360.0
-            heading_diff = abs(v_heading - seg_heading)
-            heading_error = min(heading_diff, 360.0 - heading_diff)
-
-            spatial_prob = math.exp(-(perp_dist ** 2) / (2.0 * sigma * sigma))
-
-            model_prob = 1.0
-            if trained_model is not None:
-                try:
-                    feat = np.array([[perp_dist, t_clamped, heading_error, seg_len, dist_to_start, dist_to_end]])
-                    if hasattr(trained_model, "predict_proba"):
-                        model_prob = float(trained_model.predict_proba(feat)[0][1])
-                    else:
-                        model_prob = float(trained_model.predict(feat)[0])
-                except Exception:
-                    model_prob = 1.0
-
-            emission = model_prob * spatial_prob + 1e-12
-
-            step_cands.append({
-                "arc_id": int(arc_id),
-                "from_node": int(from_nodes[idx]),
-                "to_node": int(to_nodes[idx]),
-                "emission": emission,
-                "perp_dist": perp_dist,
-                "t_ratio": t_clamped
-            })
-
-        timesteps_candidates.append(step_cands)
-
-    point_predictions = []
-    V = [{} for _ in range(num_points)]
-    backpointer = [{} for _ in range(num_points)]
-
-    for i, cand in enumerate(timesteps_candidates[0]):
-        V[0][i] = math.log(max(cand["emission"], 1e-15))
-
-    for t in range(1, num_points):
-        prev_cands = timesteps_candidates[t - 1]
-        curr_cands = timesteps_candidates[t]
-
-        for j, curr_c in enumerate(curr_cands):
-            best_prev_score = -float("inf")
-            best_prev_idx = 0
-            curr_nodes = {curr_c["from_node"], curr_c["to_node"]}
-
-            for i, prev_c in enumerate(prev_cands):
-                prev_nodes = {prev_c["from_node"], prev_c["to_node"]}
-
-                if curr_c["arc_id"] == prev_c["arc_id"]:
-                    trans_prob = 0.90
-                elif curr_nodes.intersection(prev_nodes):
-                    trans_prob = 0.70
-                else:
-                    trans_prob = 0.05
-
-                score = V[t - 1][i] + math.log(trans_prob) + math.log(max(curr_c["emission"], 1e-15))
-
-                if score > best_prev_score:
-                    best_prev_score = score
-                    best_prev_idx = i
-
-            V[t][j] = best_prev_score
-            backpointer[t][j] = best_prev_idx
-
-    best_last_idx = max(V[num_points - 1], key=V[num_points - 1].get)
-    best_path_indices = [best_last_idx]
-
-    for t in range(num_points - 1, 0, -1):
-        prev_idx = backpointer[t][best_path_indices[-1]]
-        best_path_indices.append(prev_idx)
-
-    best_path_indices.reverse()
-
-    for t in range(num_points):
-        chosen_idx = best_path_indices[t]
-        point_predictions.append(timesteps_candidates[t][chosen_idx]["arc_id"])
-
+    # Cast to native Python int: FastAPI's jsonable_encoder cannot serialize numpy.int64
+    # inside a plain list, and the underlying candidate/arc ids are numpy ints throughout
+    # the hmm_viterbi / pandas pipeline.
+    point_predictions = [int(a) for a in result["predicted_arc_ids"]]
     sequence_predictions = []
     for arc in point_predictions:
         if not sequence_predictions or arc != sequence_predictions[-1]:

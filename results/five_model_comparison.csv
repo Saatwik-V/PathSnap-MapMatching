@@ -1,6 +1,6 @@
-Model,Algorithm Family,Key Configuration,CV Macro F1,Top-1 Accuracy,Log Loss,Train Time (s),Inference Latency (ms)
-Logistic Regression,Linear & Probabilistic,"max_iter=1000, class_weight='balanced'",0.7562,70.52%,0.5033,0.27,0.0
-Distance-Weighted k-NN,Instance-based,"k=5, weights='distance', algorithm='kd_tree'",0.7697,69.76%,2.7509,0.25,0.006
-Random Forest,Ensemble (Bagging),"n_estimators=100, max_depth=12, n_jobs=-1",0.7905,71.7%,0.4437,13.23,0.001
-Histogram Gradient Boosting,Boosting,"max_iter=100, learning_rate=0.08, l2_regularization=0.1",0.7879,71.59%,0.4445,2.17,0.001
-Multi-Layer Perceptron (MLP),Neural Network,"hidden_layers=(64, 32), early_stopping=True, max_iter=150",0.7984,71.86%,0.4402,40.03,0.0
+Model,Algorithm Family,Key Configuration,CV Macro F1,Top-1 Accuracy,Log Loss,Train Time (s),Inference Latency (ms),Student-Test Top-1 Accuracy,Student-Test Macro F1,Route Continuity
+Logistic Regression,Linear & Probabilistic,"max_iter=1000, class_weight='balanced'",0.7444,70.77%,0.5087,1.09,0.0,82.06%,0.7594,92.87%
+Distance-Weighted k-NN,Instance-based,"k=5, weights='distance', algorithm='kd_tree'",0.7526,69.5%,2.558,0.66,0.089,80.68%,0.7568,91.01%
+Random Forest,Ensemble (Bagging),"n_estimators=100, max_depth=12, n_jobs=-1",0.7856,73.0%,0.4153,49.83,0.001,84.75%,0.7869,92.31%
+Histogram Gradient Boosting,Boosting,"max_iter=100, learning_rate=0.08, l2_regularization=0.1",0.7908,73.09%,0.4117,5.68,0.001,84.88%,0.791,92.32%
+Multi-Layer Perceptron (MLP),Neural Network,"hidden_layers=(64, 32), early_stopping=True, max_iter=150",0.7952,72.7%,0.4238,105.84,0.0,84.16%,0.7935,92.15%

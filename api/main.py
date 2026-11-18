@@ -179,8 +179,10 @@ def predict_and_evaluate(trip_id: str, request: Request):
 
         print(f"[{timestamp}] Data Ingestion: Loaded {num_gps:,} GPS points | {num_nodes:,} nodes | {num_arcs:,} arcs | {num_gt} ground-truth arcs")
 
-        # 2. Check for Champion Model Artifact
-        model_path = os.path.join(REPO_ROOT, "results", "best_model.joblib")
+        # 2. Check for Champion Model Artifact (prefer the Optuna-tuned model)
+        model_path = os.path.join(REPO_ROOT, "results", "best_tuned_model.joblib")
+        if not os.path.exists(model_path):
+            model_path = os.path.join(REPO_ROOT, "results", "best_model.joblib")
         if not os.path.exists(model_path):
             model_path = None
 

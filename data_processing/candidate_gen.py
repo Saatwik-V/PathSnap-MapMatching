@@ -1,7 +1,13 @@
 """
-Candidate Generation & Feature Extraction Pipeline - PathSnap
+Candidate Generation Pipeline - PathSnap
 Authors: Vikas Jadar & Saatwik
-Extracts nearest candidate road segments per GPS observation and computes geometric/kinematic features.
+Finds the nearest candidate road segments per GPS observation and computes the 6 base
+geometric features (perp_dist, proj_ratio, heading_error, arc_length, dist_to_start,
+dist_to_end) plus candidate_rank and the ground-truth label.
+
+The full 12-feature table (adding kinematic/derived features) used for model training
+and inference is built on top of this by feature_engineering/extract_features.py -- see
+that module for the complete feature list.
 """
 
 import os
@@ -13,7 +19,7 @@ from scipy.spatial import cKDTree
 def process_trip_candidates(
     trip_id: str,
     base_dir: str = "Student folder/train",
-    k_candidates: int = 5,
+    k_candidates: int = 10,
     max_radius_m: float = 60.0
 ) -> pd.DataFrame:
     """
